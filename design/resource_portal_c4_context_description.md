@@ -1,0 +1,43 @@
+# Resource Portal — System Context
+
+![Resource Portal — C4 System Context Diagram](./exported/svg/C4Context_ResourcePortal.svg)
+
+## Overview
+
+The Resource Portal is a self-service web portal that allows engineering teams to request, approve, and monitor infrastructure resources running on Kubernetes clusters. It sits at the intersection of three concerns: identity, governance, and infrastructure — abstracting away the complexity of Kubernetes and Rancher behind a simple request catalogue and an approval workflow.
+
+This diagram shows the system at the C4 Context level: who interacts with the portal, which external systems it depends on, and how those dependencies are structured. Internal implementation details — such as how the portal is deployed or how Rancher proxies requests to individual clusters — are intentionally out of scope at this level and covered in the Container diagram.
+
+## Actors
+
+Three roles interact with the Resource Portal directly.
+
+The **End User** is any engineer or team member who needs infrastructure resources. They browse the portal catalogue, submit requests, and track their status through the provisioning lifecycle.
+
+The **Approver** is responsible for reviewing requests before they are acted upon. The approval step is built into the portal itself — no pull request or external ticketing system is involved. Approvers act directly on the request object, triggering a state transition that unblocks provisioning.
+
+The **Platform Admin** configures the portal: which resource types are available, what quota limits apply, and how approval routing is defined. This role has no direct interaction with the underlying clusters — all configuration is expressed through the portal's policy model.
+
+## External Systems
+
+### Identity Provider
+
+The Identity Provider (Keycloak, LDAP, or any OIDC-compatible SSO) is the single source of user identity for the entire stack. Both the Resource Portal and the Platform Infrastructure authenticate against the same IdP, which means the user's identity token is consistent from the moment of login all the way to the cluster API server. There is no identity translation, service account impersonation, or privilege escalation anywhere in the flow.
+
+### Platform Infrastructure
+
+Platform Infrastructure represents Rancher and the Rancher-managed downstream Kubernetes clusters, collapsed into a single boundary at this level of the diagram. The two are shown together because, from the portal's perspective, they form a single logical target: the portal sends operations, and Rancher handles authentication, RBAC enforcement, and routing to the correct cluster transparently.
+
+Rancher's role is that of an authn/RBAC proxy — it validates the user's token against the Identity Provider, checks whether the user has the required permissions on the target cluster, and forwards the request to the cluster API server if authorised. It does not act autonomously on clusters; it only acts on behalf of an authenticated user request originating from the portal.
+
+On the cluster side, each resource type exposed by the portal is backed by a Custom Resource Definition (CRD) and a dedicated controller. When a request is approved, the portal applies the corresponding CRD instance to the target cluster via Rancher. The controller then reconciles the declared desired state into actual infrastructure — following the standard Kubernetes operator pattern.
+
+## Key Design Decisions
+
+**Single identity plane.** Using a shared Identity Provider across the portal and all clusters eliminates the need for service accounts with broad cluster permissions. Every action on a cluster is attributable to a specific user, which simplifies auditing and makes RBAC policies straightforward to reason about.
+
+**Rancher as the only entry point.** The portal holds no per-cluster credentials. All cluster access flows through Rancher, which centralises access governance and means that revoking a user's access in Rancher immediately cuts off their ability to act through the portal as well.
+
+**CRD-as-API surface.** The portal's interaction with clusters is entirely through CRDs — there are no bespoke APIs or imperative scripts. Adding a new resource type to the catalogue requires defining a new CRD and its controller, without touching the portal's core logic. This makes the platform extensible and keeps the provisioning logic close to the cluster where it belongs.
+
+**Approval without Git.** The approval workflow is native to the portal, not implemented as a pull request gate or an external ticketing integration. This keeps the feedback loop short and avoids coupling the provisioning path to a specific VCS workflow.

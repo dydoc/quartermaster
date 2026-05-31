@@ -1,0 +1,204 @@
+{
+  "configuration" : { },
+  "description" : "C4 Context diagram — Resource Portal v6. The portal provides self-service access to infrastructure resources on Rancher-managed Kubernetes clusters. All resource types are implemented as CRDs. User identity is propagated end-to-end through Rancher to each downstream cluster.",
+  "documentation" : { },
+  "id" : 1,
+  "lastModifiedDate" : "2026-05-31T15:24:35Z",
+  "model" : {
+    "people" : [ {
+      "description" : "Requests and monitors infrastructure resources via the portal.",
+      "id" : "1",
+      "name" : "End User",
+      "properties" : {
+        "structurizr.dsl.identifier" : "endUser"
+      },
+      "relationships" : [ {
+        "description" : "Requests resources and monitors status",
+        "destinationId" : "6",
+        "id" : "7",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person,Actor"
+    }, {
+      "description" : "Reviews and approves resource requests before provisioning.",
+      "id" : "2",
+      "name" : "Approver",
+      "properties" : {
+        "structurizr.dsl.identifier" : "approver"
+      },
+      "relationships" : [ {
+        "description" : "Reviews and approves requests",
+        "destinationId" : "6",
+        "id" : "8",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person,Actor"
+    }, {
+      "description" : "Configures available resource types, quotas, and approval policies.",
+      "id" : "3",
+      "name" : "Platform Admin",
+      "properties" : {
+        "structurizr.dsl.identifier" : "platformAdmin"
+      },
+      "relationships" : [ {
+        "description" : "Configures policies and resource catalogue",
+        "destinationId" : "6",
+        "id" : "9",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person,Actor"
+    } ],
+    "softwareSystems" : [ {
+      "description" : "Central authentication service (Keycloak / LDAP / SSO). Shared by the portal and all downstream clusters — user identity is consistent end-to-end.",
+      "documentation" : { },
+      "id" : "4",
+      "name" : "Identity Provider",
+      "properties" : {
+        "structurizr.dsl.identifier" : "idp"
+      },
+      "tags" : "Element,Software System,External"
+    }, {
+      "description" : "Rancher (authn/RBAC proxy) + Rancher-managed K8s clusters. User identity propagated end-to-end. Each resource type backed by a CRD and a reconciling controller.",
+      "documentation" : { },
+      "id" : "5",
+      "name" : "Platform Infrastructure",
+      "properties" : {
+        "structurizr.dsl.identifier" : "platformInfra"
+      },
+      "relationships" : [ {
+        "description" : "Verifies user tokens via OIDC",
+        "destinationId" : "4",
+        "id" : "12",
+        "sourceId" : "5",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Software System,PlatformInternal"
+    }, {
+      "description" : "Self-service portal for requesting and managing infrastructure resources. Translates approved requests into CRD manifests applied on the target clusters.",
+      "documentation" : { },
+      "id" : "6",
+      "name" : "Resource Portal",
+      "properties" : {
+        "structurizr.dsl.identifier" : "resourcePortal"
+      },
+      "relationships" : [ {
+        "description" : "Authenticates users via OIDC",
+        "destinationId" : "4",
+        "id" : "10",
+        "sourceId" : "6",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Applies CRDs and reads resource state (user identity end-to-end)",
+        "destinationId" : "5",
+        "id" : "11",
+        "sourceId" : "6",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Software System,InScope"
+    } ]
+  },
+  "name" : "Resource Portal",
+  "properties" : {
+    "structurizr.inspection.error" : "7",
+    "structurizr.dsl" : "d29ya3NwYWNlICJSZXNvdXJjZSBQb3J0YWwiICJDNCBDb250ZXh0IGRpYWdyYW0g4oCUIFJlc291cmNlIFBvcnRhbCB2Ni4gVGhlIHBvcnRhbCBwcm92aWRlcyBzZWxmLXNlcnZpY2UgYWNjZXNzIHRvIGluZnJhc3RydWN0dXJlIHJlc291cmNlcyBvbiBSYW5jaGVyLW1hbmFnZWQgS3ViZXJuZXRlcyBjbHVzdGVycy4gQWxsIHJlc291cmNlIHR5cGVzIGFyZSBpbXBsZW1lbnRlZCBhcyBDUkRzLiBVc2VyIGlkZW50aXR5IGlzIHByb3BhZ2F0ZWQgZW5kLXRvLWVuZCB0aHJvdWdoIFJhbmNoZXIgdG8gZWFjaCBkb3duc3RyZWFtIGNsdXN0ZXIuIiB7CgogICAgbW9kZWwgewoKICAgICAgICAjIOKUgOKUgCBIdW1hbiBhY3RvcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgZW5kVXNlciA9IHBlcnNvbiAiRW5kIFVzZXIiICJSZXF1ZXN0cyBhbmQgbW9uaXRvcnMgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzIHZpYSB0aGUgcG9ydGFsLiIgewogICAgICAgICAgICB0YWdzICJBY3RvciIKICAgICAgICB9CgogICAgICAgIGFwcHJvdmVyID0gcGVyc29uICJBcHByb3ZlciIgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlc291cmNlIHJlcXVlc3RzIGJlZm9yZSBwcm92aXNpb25pbmcuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgcGxhdGZvcm1BZG1pbiA9IHBlcnNvbiAiUGxhdGZvcm0gQWRtaW4iICJDb25maWd1cmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGFzLCBhbmQgYXBwcm92YWwgcG9saWNpZXMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgRXh0ZXJuYWwgc3lzdGVtcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBpZHAgPSBzb2Z0d2FyZVN5c3RlbSAiSWRlbnRpdHkgUHJvdmlkZXIiICJDZW50cmFsIGF1dGhlbnRpY2F0aW9uIHNlcnZpY2UgKEtleWNsb2FrIC8gTERBUCAvIFNTTykuIFNoYXJlZCBieSB0aGUgcG9ydGFsIGFuZCBhbGwgZG93bnN0cmVhbSBjbHVzdGVycyDigJQgdXNlciBpZGVudGl0eSBpcyBjb25zaXN0ZW50IGVuZC10by1lbmQuIiB7CiAgICAgICAgICAgIHRhZ3MgIkV4dGVybmFsIgogICAgICAgIH0KCiAgICAgICAgIyBSYW5jaGVyIGFuZCB0aGUgZG93bnN0cmVhbSBjbHVzdGVycyBhcmUgY29sbGFwc2VkIGludG8gYSBzaW5nbGUgYm91bmRhcnk6CiAgICAgICAgIyBSYW5jaGVyIGFjdHMgYXMgYW4gYXV0aG4vUkJBQyBwcm94eTsgaXQgZG9lcyBub3QgYWN0IGF1dG9ub21vdXNseSBvbiBjbHVzdGVycy4KICAgICAgICAjIFRoZSBkb3duc3RyZWFtIGNsdXN0ZXJzIGhvc3QgdGhlIENSRHMgYW5kIGNvbnRyb2xsZXJzIHRoYXQgcmVjb25jaWxlIHJlc291cmNlIHN0YXRlLgogICAgICAgIHBsYXRmb3JtSW5mcmEgPSBzb2Z0d2FyZVN5c3RlbSAiUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUiICJSYW5jaGVyIChhdXRobi9SQkFDIHByb3h5KSArIFJhbmNoZXItbWFuYWdlZCBLOHMgY2x1c3RlcnMuIFVzZXIgaWRlbnRpdHkgcHJvcGFnYXRlZCBlbmQtdG8tZW5kLiBFYWNoIHJlc291cmNlIHR5cGUgYmFja2VkIGJ5IGEgQ1JEIGFuZCBhIHJlY29uY2lsaW5nIGNvbnRyb2xsZXIuIiB7CiAgICAgICAgICAgIHRhZ3MgIlBsYXRmb3JtSW50ZXJuYWwiCiAgICAgICAgfQoKICAgICAgICAjIOKUgOKUgCBTeXN0ZW0gaW4gc2NvcGUg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgcmVzb3VyY2VQb3J0YWwgPSBzb2Z0d2FyZVN5c3RlbSAiUmVzb3VyY2UgUG9ydGFsIiAiU2VsZi1zZXJ2aWNlIHBvcnRhbCBmb3IgcmVxdWVzdGluZyBhbmQgbWFuYWdpbmcgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzLiBUcmFuc2xhdGVzIGFwcHJvdmVkIHJlcXVlc3RzIGludG8gQ1JEIG1hbmlmZXN0cyBhcHBsaWVkIG9uIHRoZSB0YXJnZXQgY2x1c3RlcnMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkluU2NvcGUiCiAgICAgICAgfQoKICAgICAgICAjIOKUgOKUgCBSZWxhdGlvbnNoaXBzIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAoKICAgICAgICAjIEFjdG9ycyDihpIgUmVzb3VyY2UgUG9ydGFsCiAgICAgICAgZW5kVXNlciAgICAgICAtPiByZXNvdXJjZVBvcnRhbCAiUmVxdWVzdHMgcmVzb3VyY2VzIGFuZCBtb25pdG9ycyBzdGF0dXMiCiAgICAgICAgYXBwcm92ZXIgICAgICAtPiByZXNvdXJjZVBvcnRhbCAiUmV2aWV3cyBhbmQgYXBwcm92ZXMgcmVxdWVzdHMiCiAgICAgICAgcGxhdGZvcm1BZG1pbiAtPiByZXNvdXJjZVBvcnRhbCAiQ29uZmlndXJlcyBwb2xpY2llcyBhbmQgcmVzb3VyY2UgY2F0YWxvZ3VlIgoKICAgICAgICAjIFJlc291cmNlIFBvcnRhbCDihpIgSWRlbnRpdHkgUHJvdmlkZXIKICAgICAgICByZXNvdXJjZVBvcnRhbCAtPiBpZHAgIkF1dGhlbnRpY2F0ZXMgdXNlcnMgdmlhIE9JREMiCgogICAgICAgICMgUmVzb3VyY2UgUG9ydGFsIOKGkiBQbGF0Zm9ybSBJbmZyYXN0cnVjdHVyZQogICAgICAgIHJlc291cmNlUG9ydGFsIC0+IHBsYXRmb3JtSW5mcmEgIkFwcGxpZXMgQ1JEcyBhbmQgcmVhZHMgcmVzb3VyY2Ugc3RhdGUgKHVzZXIgaWRlbnRpdHkgZW5kLXRvLWVuZCkiCiAgICAgICAgcGxhdGZvcm1JbmZyYSAtPiBpZHAgIlZlcmlmaWVzIHVzZXIgdG9rZW5zIHZpYSBPSURDIgogICAgfQoKICAgIHZpZXdzIHsKCiAgICAgICAgc3lzdGVtQ29udGV4dCByZXNvdXJjZVBvcnRhbCAiQzRDb250ZXh0X1Jlc291cmNlUG9ydGFsIiB7CiAgICAgICAgICAgIHRpdGxlICJSZXNvdXJjZSBQb3J0YWwg4oCUIFN5c3RlbSBDb250ZXh0IgogICAgICAgICAgICBkZXNjcmlwdGlvbiAiU2hvd3MgdGhlIFJlc291cmNlIFBvcnRhbCBhbmQgaXRzIHJlbGF0aW9uc2hpcHMgd2l0aCB1c2VycywgdGhlIElkZW50aXR5IFByb3ZpZGVyLCBhbmQgdGhlIFBsYXRmb3JtIEluZnJhc3RydWN0dXJlIChSYW5jaGVyICsgZG93bnN0cmVhbSBLdWJlcm5ldGVzIGNsdXN0ZXJzKS4iCiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvTGF5b3V0CiAgICAgICAgfQoKICAgICAgICBzdHlsZXMgewogICAgICAgICAgICBlbGVtZW50ICJBY3RvciIgewogICAgICAgICAgICAgICAgc2hhcGUgUGVyc29uCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFMUY1RUUKICAgICAgICAgICAgICAgIGNvbG9yICMwODUwNDEKICAgICAgICAgICAgICAgIHN0cm9rZSAjMEY2RTU2CiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiSW5TY29wZSIgewoKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJQbGF0Zm9ybUludGVybmFsIiB7CiAgICAgICAgICAgICAgICB3aWR0aCAzODAKICAgICAgICAgICAgICAgIGhlaWdodCA0MDAKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0ZGRjNDRAogICAgICAgICAgICAgICAgY29sb3IgIzdBNEYwMAogICAgICAgICAgICAgICAgc3Ryb2tlICNCMDdEMDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJFeHRlcm5hbCIgewogICAgICAgICAgICAgICAgd2lkdGggMjgwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDAwCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGMUVGRTgKICAgICAgICAgICAgICAgIGNvbG9yICM0NDQ0M0YKICAgICAgICAgICAgICAgIHN0cm9rZSAjNUY1RTVBCiAgICAgICAgICAgIH0KICAgICAgICAgICAgcmVsYXRpb25zaGlwICJSZWxhdGlvbnNoaXAiIHsKICAgICAgICAgICAgICAgIGNvbG9yICM3MzcyNjYKICAgICAgICAgICAgICAgIHN0eWxlIGRhc2hlZAogICAgICAgICAgICAgICAgdGhpY2tuZXNzIDIKICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KfQ==",
+    "structurizr.inspection.info" : "0",
+    "structurizr.inspection.ignore" : "0",
+    "structurizr.inspection.warning" : "0"
+  },
+  "views" : {
+    "configuration" : {
+      "styles" : {
+        "elements" : [ {
+          "background" : "#e1f5ee",
+          "color" : "#085041",
+          "shape" : "Person",
+          "stroke" : "#0f6e56",
+          "tag" : "Actor"
+        }, {
+          "background" : "#f1efe8",
+          "color" : "#44443f",
+          "height" : 400,
+          "stroke" : "#5f5e5a",
+          "tag" : "External",
+          "width" : 280
+        }, {
+          "background" : "#eeedfe",
+          "color" : "#3c3489",
+          "stroke" : "#534ab7",
+          "tag" : "InScope"
+        }, {
+          "background" : "#fff3cd",
+          "color" : "#7a4f00",
+          "height" : 400,
+          "stroke" : "#b07d00",
+          "tag" : "PlatformInternal",
+          "width" : 380
+        } ],
+        "relationships" : [ {
+          "color" : "#737266",
+          "style" : "Dashed",
+          "tag" : "Relationship",
+          "thickness" : 2
+        } ]
+      },
+      "terminology" : { }
+    },
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "edgeSeparation" : 50,
+        "nodeSeparation" : 50,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 100,
+        "vertices" : true
+      },
+      "description" : "Shows the Resource Portal and its relationships with users, the Identity Provider, and the Platform Infrastructure (Rancher + downstream Kubernetes clusters).",
+      "elements" : [ {
+        "id" : "1",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "2",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "3",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "4",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "5",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "6",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "C4Context_ResourcePortal",
+      "name" : "System Context View: Resource Portal",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "10"
+      }, {
+        "id" : "11"
+      }, {
+        "id" : "12"
+      }, {
+        "id" : "7"
+      }, {
+        "id" : "8"
+      }, {
+        "id" : "9"
+      } ],
+      "softwareSystemId" : "6",
+      "title" : "Resource Portal — System Context"
+    } ]
+  }
+}

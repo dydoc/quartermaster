@@ -1,0 +1,19 @@
+services:
+  structurizr:
+    # -playwright tag: includes Microsoft Playwright for native PNG/SVG export via CLI
+    # Check the latest tag at: https://hub.docker.com/r/structurizr/structurizr/tags
+    image: structurizr/structurizr:2026.05.22-playwright
+    container_name: structurizr-local
+    ports:
+      - "8080:8080"
+    volumes:
+      # workspace/ is mounted directly: Structurizr reads and writes here.
+      # workspace.dsl  — model source (edit this in your editor)
+      # workspace.json — written automatically by the UI when you move diagram elements
+      - ./workspace:/usr/local/structurizr
+    # 'local' starts the embedded web server on port 8080.
+    # Without this argument the container prints usage and exits immediately.
+    command: local
+    restart: unless-stopped
+    # Structurizr local is accessible from localhost only (by design, no auth required).
+    # Do not expose on 0.0.0.0 in shared environments.
