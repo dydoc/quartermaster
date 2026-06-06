@@ -1,6 +1,6 @@
 # Resource Portal — System Context
 
-![Resource Portal — C4 System Context Diagram](./exported/svg/C4Context_ResourcePortal.svg)
+![Resource Portal — C4 System Context Diagram](./images/C4Context_ResourcePortal.svg)
 
 ## Overview
 
