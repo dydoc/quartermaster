@@ -18,7 +18,8 @@
 #   make podman-setup    <- run this once, then restart your shell
 
 .PHONY: up down export export-svg export-png export-text export-static \
-        export-plantuml export-mermaid open status logs clean podman-setup help
+        export-plantuml export-mermaid export-plantuml-svg plantuml-svg \
+        open status logs clean podman-setup help
 
 SHELL := /bin/bash
 
@@ -49,6 +50,37 @@ endif
 
 export CONTAINER_RUNTIME := $(RUNTIME)
 export COMPOSE_CMD        := $(COMPOSE)
+
+# ─── PlantUML detection ───────────────────────────────────────────────────────
+#
+# Resolution order (first match wins):
+#   1. $$PLANTUML_CMD  env var (e.g. "plantuml" or "java -jar /opt/plantuml.jar")
+#   2. `plantuml`      binary on PATH  (zypper install plantuml)
+#   3. `java -jar`     with PLANTUML_JAR env var pointing to the .jar
+#   4. Container       plantuml/plantuml (pulled on demand via RUNTIME)
+#
+# Override with:
+#   PLANTUML_CMD="java -jar /opt/plantuml.jar" make plantuml-svg
+#   PLANTUML_JAR=/opt/plantuml.jar make plantuml-svg
+#   PLANTUML_CMD="docker run --rm -v \$$(pwd):/work plantuml/plantuml" make plantuml-svg
+
+PLANTUML_JAR  ?=
+# Directory containing .puml source files (versioned in the repo)
+PLANTUML_SRC  ?= plantuml
+PLANTUML_DEST ?= exported/svg-plantuml
+
+ifdef PLANTUML_CMD
+  _PLANTUML := $(PLANTUML_CMD)
+else ifneq ($(shell command -v plantuml 2>/dev/null),)
+  _PLANTUML := plantuml
+else ifneq ($(PLANTUML_JAR),)
+  _PLANTUML := java -jar $(PLANTUML_JAR)
+else
+  # Fallback: run the official PlantUML container via the detected runtime.
+  # Files are mounted read-write so the container can write SVGs alongside the .puml sources.
+  _PLANTUML := $(RUNTIME) run --rm -v "$$(pwd)/$(PLANTUML_SRC):/work" -w /work plantuml/plantuml
+  _PLANTUML_CONTAINER := 1
+endif
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -139,6 +171,42 @@ export-plantuml: ## Export PlantUML only (C4 style)
 
 export-mermaid: ## Export Mermaid only (for GitHub / GitLab / MkDocs)
 	@bash export/export.sh mermaid
+
+plantuml-svg: ## Render exported .puml files → SVG  (uses plantuml binary, JAR, or container)
+	@if [ ! -d "$(PLANTUML_SRC)" ]; then \
+	  echo ""; \
+	  echo "  ERROR: $(PLANTUML_SRC)/ not found."; \
+	  echo "  Run 'make export-plantuml' first to generate the .puml sources."; \
+	  echo ""; \
+	  exit 1; \
+	fi
+	@puml_files=$$(find "$(PLANTUML_SRC)" -maxdepth 1 -name "*.puml"); \
+	puml_count=$$(echo "$$puml_files" | grep -c '.puml' || true); \
+	if [ -z "$$puml_files" ]; then \
+	  echo "  No .puml files found in $(PLANTUML_SRC)/ — nothing to render."; \
+	  exit 0; \
+	fi; \
+	mkdir -p "$(PLANTUML_DEST)"; \
+	echo ""; \
+	echo "  Rendering $$puml_count .puml file(s) → SVG"; \
+	echo "  Source : $(PLANTUML_SRC)/"; \
+	echo "  Output : $(PLANTUML_DEST)/"; \
+	echo "  Engine : $(_PLANTUML)"; \
+	echo ""; \
+	absdest=$$(pwd)/$(PLANTUML_DEST); \
+	abssrc=$$(pwd)/$(PLANTUML_SRC); \
+	$(RUNTIME) run --rm \
+	  -v "$$abssrc:/work:z" \
+	  -v "$$absdest:/out:z" \
+	  plantuml/plantuml \
+	  -tsvg -o /out "/work"; \
+	echo ""; \
+	echo "  SVGs written to $(PLANTUML_DEST)/"; \
+	echo ""
+
+export-plantuml-svg: ## Export PlantUML sources then render them to SVG  (export-plantuml + plantuml-svg)
+	@$(MAKE) export-plantuml
+	@$(MAKE) plantuml-svg
 
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
