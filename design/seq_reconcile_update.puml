@@ -1,0 +1,121 @@
+@startuml reconcile_update
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    LifeLineBorderColor #AAAAAA
+    ParticipantBorderColor #534AB7
+    ParticipantBackgroundColor #EEEDFE
+    ParticipantFontColor #3C3489
+    BoxBorderColor #B07D00
+    BoxBackgroundColor #FFF9E6
+    NoteBackgroundColor #F5F5FF
+    NoteBorderColor #9B94E0
+}
+skinparam roundcorner 6
+
+title ResourceRequest Reconcile — update
+
+box "Management Cluster" #FFF9E6
+    participant "ResourceRequest\nReconciler" as REC
+    participant "Concurrency\nGuard" as CG
+    participant "Provisioning\nState Machine" as SM
+    participant "Provisioning\nHandler" as PH
+    participant "Rollback\nHandler" as RBH
+    participant "ProvisionedResource\nWriter" as PRW
+    participant "Notifier" as NOT
+    participant "ResourceRequest\nCRD" as RRCRD #E8F4FD
+    participant "ProvisionedResource\nCRD" as PRCRD #E8F4FD
+end box
+
+box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
+    participant "CRD Target\nInstance" as CTI
+    participant "CRD Target\nController" as CTC
+end box
+
+participant "Mail Relay" as MAIL #F1EFE8
+
+== Guard ==
+
+[-> REC  : reconcile [action: update, phase: pending]
+REC -> CG : check concurrent requests\nfor same ProvisionedResource UID
+
+group Failure path — concurrent request active
+    CG  -> RRCRD : list by label target-provisioned-resource = <UID>
+    RRCRD --> CG : non-terminal ResourceRequest found
+    CG  --> REC  : conflict
+    REC --> REC  : requeue with backoff
+    note over REC : no state change\nWeb App is primary guard;\nthis is the controller-side check
+end
+
+CG  --> REC  : no conflict
+
+== Approval ==
+
+REC -> SM   : evaluate(decisions, approvers)
+
+group Failure path — rejected
+    SM  -> RRCRD : patch phase = rejected
+    note over PRCRD : ProvisionedResource unchanged\nappliedParameters = previousParameters
+end
+
+SM  -> RRCRD : patch phase = approved → provisioning
+
+== Happy path — update ==
+
+group Happy path
+    SM  -> PH   : update(parameters)
+    PH  -> CTI  : SSA apply CRD target instance\n[new parameters, controller SA]
+    activate CTI
+    CTI -> CTC  : reconcile triggered
+    activate CTC
+    CTC -> CTC  : re-apply derived objects\nwith new spec via SSA
+    CTC --> CTI : phase = Ready
+    deactivate CTC
+    CTI --> PH  : Ready observed
+    deactivate CTI
+
+    PH  -> PRW  : confirmed success
+    PRW -> PRCRD : patch appliedParameters = new\nupdate last-updated-by-request label
+    PRW -> RRCRD : patch phase = provisioned
+
+    REC -> NOT  : notify(provisioned)
+    NOT -> MAIL : SMTP → requester
+end
+
+== Failure path — update with rollback ==
+
+group Failure path
+    SM  -> PH   : update(parameters)
+    PH  -> CTI  : SSA apply [new parameters]
+    activate CTI
+    CTI -> CTC  : reconcile triggered — fails
+    activate CTC
+    CTC --> CTI : phase = NotReady
+    deactivate CTC
+    CTI --> PH  : NotReady after retries
+    deactivate CTI
+
+    note over PH : retries exhausted\nwith exponential backoff
+
+    PH  -> RBH  : rollback(previousParameters)
+    RBH -> CTI  : SSA apply CRD target instance\n[previousParameters, controller SA]
+    activate CTI
+    CTI -> CTC  : reconcile triggered
+    CTC --> CTI : phase = Ready\n(pre-update state restored)
+    deactivate CTI
+    RBH --> PH  : rollback confirmed
+
+    note over PRCRD : ProvisionedResource never modified —\nstill carries last confirmed appliedParameters
+
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+
+    REC -> NOT  : notify(failed)
+    NOT -> MAIL : SMTP → requester
+end
+
+[<-- REC : ctrl.Result{}
+
+@enduml

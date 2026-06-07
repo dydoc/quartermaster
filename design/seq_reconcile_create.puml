@@ -1,0 +1,117 @@
+@startuml reconcile_create
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    LifeLineBorderColor #AAAAAA
+    ParticipantBorderColor #534AB7
+    ParticipantBackgroundColor #EEEDFE
+    ParticipantFontColor #3C3489
+    BoxBorderColor #B07D00
+    BoxBackgroundColor #FFF9E6
+    NoteBackgroundColor #F5F5FF
+    NoteBorderColor #9B94E0
+}
+skinparam roundcorner 6
+
+title ResourceRequest Reconcile — create
+
+box "Management Cluster" #FFF9E6
+    participant "ResourceRequest\nReconciler" as REC
+    participant "Provisioning\nState Machine" as SM
+    participant "Provisioning\nHandler" as PH
+    participant "ProvisionedResource\nWriter" as PRW
+    participant "Notifier" as NOT
+    participant "ResourceRequest\nCRD" as RRCRD #E8F4FD
+    participant "ProvisionedResource\nCRD" as PRCRD #E8F4FD
+end box
+
+box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
+    participant "CRD Target\nInstance" as CTI
+    participant "CRD Target\nController" as CTC
+end box
+
+participant "Mail Relay" as MAIL #F1EFE8
+
+== Approval ==
+
+[-> REC    : reconcile [phase: pending]
+REC -> SM  : evaluate(decisions, approvers)
+SM  -> SM  : all required decisions present?
+
+group Happy path — approved
+    SM  -> RRCRD : patch phase = approved → provisioning
+    SM  -> PH    : provision(parameters)
+
+    PH  -> CTI   : SSA apply CRD target instance\n[controller SA]
+    activate CTI
+    CTI --> PH   : accepted
+
+    PH  -> CTI   : watch status.conditions
+    CTI -> CTC   : reconcile triggered
+    activate CTC
+    CTC -> CTC   : create derived objects via SSA\n(field ownership declared)
+    CTC --> CTI  : phase = Ready
+    deactivate CTC
+    CTI --> PH   : Ready observed
+    deactivate CTI
+
+    PH  -> PRW   : confirmed success
+    PRW -> PRCRD : create ProvisionedResource\n(appliedParameters, finalizer)
+    PRW -> RRCRD : patch phase = provisioned
+
+    REC -> NOT   : notify(provisioned)
+    NOT -> MAIL  : SMTP → requester
+end
+
+group Failure path — apply error
+    SM  -> RRCRD : patch phase = provisioning
+    SM  -> PH    : provision(parameters)
+
+    PH  -> CTI   : SSA apply — error\n(RBAC denial / cluster unreachable)
+    CTI --> PH   : error
+
+    note over PH : requeue with\nexponential backoff
+
+    PH  -> CTI   : SSA apply — retries exhausted
+    CTI --> PH   : error
+
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+
+    note over PRCRD : ProvisionedResource\nnot created
+
+    REC -> NOT   : notify(failed)
+    NOT -> MAIL  : SMTP → requester
+end
+
+group Failure path — CRD target NotReady
+    SM  -> RRCRD : patch phase = provisioning
+    SM  -> PH    : provision(parameters)
+
+    PH  -> CTI   : SSA apply — accepted
+    activate CTI
+    CTI -> CTC   : reconcile triggered — fails
+    activate CTC
+    CTC --> CTI  : phase = NotReady\nreason = <cause>
+    deactivate CTC
+    CTI --> PH   : NotReady after retries
+    deactivate CTI
+
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <CRD target reason>
+
+    note over PRCRD : ProvisionedResource\nnot created
+
+    REC -> NOT   : notify(failed)
+    NOT -> MAIL  : SMTP → requester
+end
+
+group Failure path — rejected
+    SM  -> RRCRD : patch phase = rejected
+    note over PRCRD : no provisioning\nattempted
+end
+
+[<-- REC : ctrl.Result{}
+
+@enduml

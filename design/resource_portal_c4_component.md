@@ -1,0 +1,120 @@
+# Resource Portal — Component Diagrams
+
+This document covers the internal structure of the two runtime containers: the **Web Application** and the **Approval Controller**. Component-level decisions do not introduce new deployable units and are not reflected in the Container diagram.
+
+---
+
+## Web Application — Components
+
+![Resource Portal — C4 Component Diagram: Web Application](./images/C4Component_WebApp.svg)
+
+### Overview
+
+The Web Application is a single Go process. All components described here are packages or logical modules within that process — they share memory, are deployed together, and communicate via function calls, not network calls. The HTTP Handler is the single entry point; all other components are invoked from within the request handling chain or from the boot sequence.
+
+### Components
+
+**HTTP Handler** routes all incoming requests to the appropriate page handler and enforces session authentication on every request before dispatching. It is the only component that touches the raw `net/http` layer.
+
+**OIDC Session Manager** handles the OIDC authorization code flow with the Identity Provider. It issues and validates session cookies and extracts the user's identity (username, groups) from the ID token, making it available to all downstream handlers for the duration of the request.
+
+**Catalogue Handler** serves the resource catalogue browsing UI. It reads `ResourceCatalogue` objects from the API server — these are low-frequency, admin-written objects that do not need to go through the informer cache — and renders the available resource types and their parameter schemas.
+
+**Submission Handler** handles all `ResourceRequest` submissions — `create`, `update`, and `delete` actions. Its responsibilities at submission time are: validate the submitted parameters against the `ResourceCatalogue` schema; for `update` and `delete`, enforce the single-active-request constraint by querying the informer cache for non-terminal requests with a matching `targetRef` UID; for `update`, snapshot the current `appliedParameters` from the `ProvisionedResource` into `previousParameters`; invoke the Approver Resolver to expand the routing rule into a concrete approver list; and write the `ResourceRequest` to the management cluster via Rancher, authenticated as the logged-in user.
+
+**Approver Handler** serves the approval queue UI and handles approve/reject actions. It reads pending `ResourceRequest` objects from the informer cache, filtered by the logged-in user's identity against the pre-resolved approver list. It writes approval decisions to the `ResourceRequest` status subresource, authenticated as the logged-in user.
+
+**Status Handler** serves the resource status and history UI for End Users. It reads `ProvisionedResource` objects and the associated `ResourceRequest` history from the informer cache via label selector — `portal.example.com/created-by-request` and `portal.example.com/last-updated-by-request` — with no API server calls at page load time.
+
+**Informer Cache** is a client-go `SharedInformer` started at boot for both `ResourceRequest` and `ProvisionedResource` objects. It maintains a local in-memory store kept in sync by Kubernetes watch events. All list and get operations in the Web App go through this cache. The informer authenticates as the logged-in user via Rancher for the watch connection, so the cache only contains objects the user is authorised to see.
+
+**Approver Resolver** translates an approval routing rule from the `ResourceCatalogue` into a concrete list of approver identities. It may perform LDAP group expansion, resolve team label annotations, or dereference explicit user lists depending on the rule type. It is called exclusively by the Submission Handler at request time. Its output is embedded in the `ResourceRequest` and is never re-evaluated by the Approval Controller.
+
+### Key Design Decisions
+
+**Single-active-request constraint enforced in the Submission Handler.** Before writing any `update` or `delete` `ResourceRequest`, the Submission Handler queries the informer cache for existing non-terminal requests (`pending`, `approved`, `provisioning`) that reference the same `ProvisionedResource` UID. If one is found, the submission is rejected immediately with a user-facing error. The Approval Controller applies a secondary check via the Concurrency Guard, but the primary enforcement is here, where a clear error can be surfaced to the user before any write occurs.
+
+**Approver identity resolved once, at submission.** The Approver Resolver is called exactly once per submission. Its output is a flat list of identity strings embedded in the `ResourceRequest`. The Approver Handler uses this list to filter the approval queue — it never calls the resolver again. This makes the controller independent of directory service availability and ensures that changes to group membership after submission do not retroactively affect an in-flight request.
+
+**previousParameters snapshotted by the Submission Handler.** For `update` actions, the Submission Handler reads the current `ProvisionedResource.spec.appliedParameters` and writes them into `ResourceRequest.spec.previousParameters` at submission time. This snapshot is the source of truth for the approver diff view and for the controller's rollback logic — the controller never needs to re-read the `ProvisionedResource` to determine what to roll back to.
+
+---
+
+## Approval Controller — Components
+
+![Resource Portal — C4 Component Diagram: Approval Controller](./images/C4Component_ApprovalController.svg)
+
+### Two controllers, two clusters — clarification on scope
+
+Before describing the components, it is important to establish precisely which controller is responsible for what, because two distinct controllers operate in this system on two distinct clusters.
+
+The **Approval Controller** lives on the **management cluster**. Its scope is entirely the `ResourceRequest` and `ProvisionedResource` CRDs that live there. Its only write to a target cluster is creating, updating, or deleting the **CRD target instance** (e.g. a `NamespaceRequest`). It never touches derived objects — Pods, Services, ConfigMaps, or any other resource that the CRD target instance produces. It has no knowledge of those objects and no authority over them.
+
+The **CRD target controller** lives on the **target cluster**. It watches the CRD target instances on that cluster and reconciles them into concrete Kubernetes objects — the derived objects. It is written by the team onboarding a new resource type into the catalogue and must comply with the portal's onboarding contract. It is the only controller that creates, updates, and enforces SSA field ownership on derived objects. It is not part of the portal codebase.
+
+The confusion around "drift reconciliation" arises because the term was used to describe two different things at two different levels. The table below makes the boundary explicit:
+
+| Responsibility | Controller | Cluster |
+|---|---|---|
+| Drive `ResourceRequest` state machine | Approval Controller | Management |
+| Create / update / delete CRD target instance | Approval Controller | Target (via Rancher) |
+| Observe CRD target instance status | Approval Controller | Target (read-only via Rancher) |
+| Update `ProvisionedResource` to reflect confirmed state | Approval Controller | Management |
+| Detect degraded CRD target instance, update `ProvisionedResource.status` | Approval Controller (Health Observer) | Target (read-only) + Management (write) |
+| Create derived objects (Pod, Service, etc.) from CRD target instance | CRD target controller | Target |
+| Re-apply derived objects via SSA on every reconcile (drift correction) | CRD target controller | Target |
+| Enforce field ownership on derived objects | CRD target controller | Target (API server) |
+
+### Overview
+
+The Approval Controller is a single Go process built on `controller-runtime`. All components are packages or logical modules within that process. The ResourceRequest Reconciler is the only entry point, invoked by the controller-runtime work queue on every relevant event. All other components are called from within the reconcile loop.
+
+### Components
+
+**ResourceRequest Reconciler** is the `controller-runtime` `Reconciler` implementation. It is invoked for every `ResourceRequest` event (create, update, delete) and on periodic resync. It reads the current state of the `ResourceRequest`, runs the Concurrency Guard for `update` and `delete` actions, and dispatches to the Provisioning State Machine. It is the only component that interacts directly with the controller-runtime work queue and result types (`ctrl.Result`, `ctrl.Result{Requeue: true}`, etc.). It is written to be fully idempotent — re-running it on the same object at any point in its lifecycle must be safe.
+
+**Provisioning State Machine** owns all phase transition logic. Given the current phase and the current set of approver decisions from the `ResourceRequest`, it determines whether a transition is warranted and what the next phase should be. It validates decisions against the pre-resolved approver list embedded in the `ResourceRequest` spec — it never calls any external identity service. All phase transitions are written to the `ResourceRequest` status as a single atomic SSA patch to avoid partial-update races.
+
+**Provisioning Handler** executes the actual work when the state machine determines that provisioning, updating, or deleting a target-cluster resource is required. It constructs the CRD target manifest from `ResourceRequest.spec.parameters` and applies it to the target downstream cluster via SSA, using the controller's own service account through Rancher. It then enters a watch loop waiting for the CRD target instance to reach a terminal state — `Ready` for create and update, absent for delete. This watch is on the **CRD target instance itself**, not on the derived objects it produces; the Approval Controller has no visibility into derived objects. On confirmed success it signals the ProvisionedResource Writer. On exhausted retries for an `update` action it invokes the Rollback Handler before returning a failure signal to the Reconciler.
+
+**Rollback Handler** is invoked exclusively by the Provisioning Handler on `update` failure after retries are exhausted. It reads `ResourceRequest.spec.previousParameters` and re-applies them to the CRD target instance via SSA — the same mechanism as the forward apply, but with the previous configuration. This restores the CRD target instance to its pre-update spec; the CRD target controller on the downstream cluster then reconciles that spec back into the correct derived object state automatically, without any involvement from the Approval Controller. The `ProvisionedResource` is never modified during rollback because it was never updated optimistically.
+
+**Health Observer** runs on every reconcile loop pass for all `ProvisionedResource` objects in `provisioned` or `updating` phase, regardless of whether a new `ResourceRequest` event triggered the reconcile. It reads the `status.conditions` of the CRD target instance on the downstream cluster (read-only via Rancher, using the controller service account) and compares the observed `Ready` condition against what the `ProvisionedResource` currently records. If the CRD target instance has become `NotReady` or has disappeared since the last reconcile, the Health Observer updates `ProvisionedResource.status.phase` to `degraded` or `unknown` accordingly, making the degradation visible in the Web App via the informer cache. If the CRD target instance has disappeared entirely and the `ProvisionedResource` is not in `deleting` phase — meaning it was deleted out-of-band, not through a portal request — the Health Observer re-applies the CRD target instance via SSA to restore it. This is the only form of drift correction that the Approval Controller performs, and it operates exclusively at the CRD target instance level, never on derived objects.
+
+**ProvisionedResource Writer** creates or updates the `ProvisionedResource` on the management cluster. It is called only after the Provisioning Handler has received confirmed success from the downstream cluster — never optimistically. On `create`: it writes a new `ProvisionedResource` with `appliedParameters` and adds the `portal.example.com/deprovisioning` finalizer. On `update`: it patches `appliedParameters` with the newly confirmed values and updates the `last-updated-by-request` label. On `delete`: after the Provisioning Handler confirms the downstream CRD target instance is gone, it removes the finalizer, allowing the Kubernetes GC to delete the `ProvisionedResource`.
+
+**Notifier** sends email notifications via the Mail Relay on `provisioned` and `failed` phase transitions. It reads the requester identity from a dedicated `spec.requester` field on the `ResourceRequest` and constructs a plain-text SMTP message. It operates fire-and-forget: a notification failure is logged but does not cause the reconcile to fail or requeue. Notification state is not persisted — if the controller restarts after a transition but before the notification is sent, the notification may be lost.
+
+**Concurrency Guard** is called by the Reconciler at the start of every `update` and `delete` reconcile. It lists all `ResourceRequest` objects that reference the same `ProvisionedResource` UID via label selector on the controller's own cache and checks whether any of them are in a non-terminal phase other than the current one. If a conflict is found, the Reconciler returns `ctrl.Result{RequeueAfter: backoff}` without proceeding. This is a secondary check — the Web App's Submission Handler is the primary enforcement point — but it guards against race conditions between concurrent reconcile loop invocations or after a fast re-submission that bypassed the Submission Handler's cache view.
+
+### What the Approval Controller does NOT do
+
+To be explicit: the Approval Controller **never** reads, writes, patches, or deletes Pods, Services, ConfigMaps, PVCs, or any other derived object on any cluster. Those objects are entirely within the scope of the CRD target controller on the target cluster. The Approval Controller's interaction with the target cluster is limited to:
+
+- SSA apply of the CRD target instance (create / update / rollback / re-apply on out-of-band deletion)
+- Read-only observation of the CRD target instance `status` (Health Observer)
+- Deletion of the CRD target instance (deprovisioning)
+
+All drift correction on derived objects is the responsibility of the CRD target controller, which re-applies its full desired state via SSA on every reconcile loop. This is enforced by the onboarding contract, not by anything the Approval Controller does at runtime.
+
+### Key Design Decisions
+
+**Drift correction of derived objects belongs to the CRD target controller, not the Approval Controller.** The Approval Controller has no visibility into derived objects and no authority over them. The mechanism that prevents an end user from persistently modifying a Pod owned by a CRD target instance is the CRD target controller's own reconcile loop, which re-applies SSA field ownership on every pass. The Approval Controller's Health Observer corrects only one type of drift: out-of-band deletion of the CRD target instance itself, which is a different layer from the derived objects.
+
+**Confirmed-state updates only.** The ProvisionedResource Writer never writes until the Provisioning Handler has observed a terminal-success state on the downstream CRD target instance. This invariant means `ProvisionedResource.spec.appliedParameters` always reflects the last state that was actually operational on the target cluster — never a desired or transitional state. This makes `ProvisionedResource` a reliable source of truth for the rollback target and for the Web App's status display.
+
+**Rollback restores the CRD target instance spec; the CRD target controller does the rest.** The Rollback Handler re-applies `previousParameters` to the CRD target instance. It does not attempt to roll back derived objects directly — it does not know how to do so, and it does not need to. Once the CRD target instance spec is restored, the CRD target controller reconciles it back to the correct derived object state on the next reconcile pass. This is a clean separation of concerns: the Approval Controller owns the desired state declaration; the CRD target controller owns its realisation.
+
+**Health Observer scope is limited to the CRD target instance.** The Health Observer reads `status.conditions` on the CRD target instance, not on derived objects. A degraded Pod does not cause the Health Observer to fire — only a degraded or missing CRD target instance does. This keeps the Health Observer's read scope minimal and avoids the complexity of reasoning about the health of an arbitrary graph of derived objects.
+
+**Notifier is fire-and-forget by design.** Notification delivery is not a correctness concern — a missed email does not affect the consistency of portal state. Making notification failure retryable would require persisting notification state separately, adding complexity for minimal gain. Operators who need guaranteed delivery should front the Mail Relay with a queuing SMTP gateway.
+
+**Idempotency is a hard requirement on the Reconciler.** Because controller-runtime can invoke the Reconciler multiple times for the same object (on requeue, on resync, after a crash-restart), every operation in the reconcile loop must be safe to re-run. SSA is inherently idempotent. Phase transitions are gated on the current phase before writing. The ProvisionedResource Writer uses SSA for upsert. The Concurrency Guard and Health Observer are read-only checks with no side effects on the first read.
+
+### Implementation Notes
+
+**Unique naming of target-cluster instances.** CRD target instances on downstream clusters are named using the UID of the originating `create` `ResourceRequest`, not the user-provided name. This prevents naming collisions between requests from different users for the same resource type and makes the provenance of every target-cluster object unambiguous from the object name alone.
+
+**Bidirectional cross-reference via labels.** `ProvisionedResource` carries labels `portal.example.com/created-by-request` and `portal.example.com/last-updated-by-request` with the UIDs of the relevant `ResourceRequest` objects. `ResourceRequest` objects carry `portal.example.com/target-provisioned-resource` with the UID of the `ProvisionedResource` when applicable. These labels allow both the Web App informer cache and the controller's own cache to satisfy cross-reference queries with a single label selector, with no additional API server calls.
+
+**Finalizer removal is the last operation on delete.** The ProvisionedResource Writer removes the `portal.example.com/deprovisioning` finalizer only as the absolute last step of a successful `delete` reconcile, after the Provisioning Handler has confirmed the downstream resource is gone. If the controller crashes between confirming deletion and removing the finalizer, the next reconcile will re-confirm deletion (the downstream resource is already gone) and remove the finalizer — fully idempotent.

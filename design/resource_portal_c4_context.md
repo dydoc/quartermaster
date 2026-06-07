@@ -22,7 +22,7 @@ The **Platform Admin** configures the portal: which resource types are available
 
 ### Identity Provider
 
-The Identity Provider (Keycloak, LDAP, or any OIDC-compatible SSO) is the single source of user identity for the entire stack. Both the Resource Portal and the Platform Infrastructure authenticate against the same IdP, which means the user's identity token is consistent from the moment of login all the way to the cluster API server. There is no identity translation, service account impersonation, or privilege escalation anywhere in the flow.
+The Identity Provider (Keycloak, LDAP, or any OIDC-compatible SSO) is the single source of user identity for the Web Application and for Rancher's authn layer. Both authenticate against the same IdP, so the user's identity token is consistent from login through to all management-cluster operations performed via Rancher. The Approval Controller, however, acts under its own Kubernetes service account when writing to target clusters — that leg of the flow does not carry user identity, by design.
 
 ### Platform Infrastructure
 
@@ -34,9 +34,9 @@ On the cluster side, each resource type exposed by the portal is backed by a Cus
 
 ## Key Design Decisions
 
-**Single identity plane.** Using a shared Identity Provider across the portal and all clusters eliminates the need for service accounts with broad cluster permissions. Every action on a cluster is attributable to a specific user, which simplifies auditing and makes RBAC policies straightforward to reason about.
+**Dual identity plane.** The system uses two distinct identities deliberately. The Web App authenticates as the logged-in user for all management-cluster operations — reading the catalogue, creating `ResourceRequest` objects, recording approver decisions — so that every user action is attributable and auditable through standard Kubernetes audit logs. The Approval Controller uses a dedicated service account with narrow RBAC on target clusters for the provisioning step. This separation is the architectural guarantee that users cannot bypass the approval workflow: the resource types exposed by the portal are inaccessible to end users on the target clusters.
 
-**Rancher as the only entry point.** The portal holds no per-cluster credentials. All cluster access flows through Rancher, which centralises access governance and means that revoking a user's access in Rancher immediately cuts off their ability to act through the portal as well.
+**Rancher as the only entry point.** The portal holds no per-cluster credentials for management-cluster operations performed by the Web App. All such access flows through Rancher, which centralises access governance and means that revoking a user's access in Rancher immediately cuts off their ability to act through the portal as well. The controller service account is separately managed and scoped to provisioning operations only.
 
 **CRD-as-API surface.** The portal's interaction with clusters is entirely through CRDs — there are no bespoke APIs or imperative scripts. Adding a new resource type to the catalogue requires defining a new CRD and its controller, without touching the portal's core logic. This makes the platform extensible and keeps the provisioning logic close to the cluster where it belongs.
 

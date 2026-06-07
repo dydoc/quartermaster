@@ -1,0 +1,60 @@
+@startuml state_resource_request
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam state {
+    BackgroundColor #EEEDFE
+    BorderColor #534AB7
+    FontColor #3C3489
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    StartColor #085041
+    EndColor #085041
+}
+skinparam roundcorner 8
+skinparam nodesep 55
+skinparam ranksep 45
+
+title ResourceRequest — Phase State Machine
+
+[*] --> pending : Web App creates ResourceRequest\n(action: create | update | delete)
+
+pending --> approved   : Approval Controller — all required\napprover decisions recorded
+pending --> rejected   : Approval Controller — rejection\ndecision recorded
+
+approved --> provisioning : Approval Controller — begins\napply on target cluster
+
+state provisioning {
+    state "applying CRD\ntarget instance" as applying
+    state "watching for\nReady / absent" as watching
+    applying --> watching
+    watching --> watching : NotReady — requeue\nwith backoff
+}
+
+provisioning --> provisioned : Approval Controller —\nReady (create/update) or\nabsent (delete) confirmed
+
+provisioning --> failed      : Approval Controller —\nretries exhausted;\nrollback applied (update only)
+
+note right of rejected
+  Terminal.
+  No further transitions.
+end note
+
+note right of provisioned
+  Terminal.
+  ProvisionedResource written\nor finalizer removed (delete).
+  Email notification sent.
+end note
+
+note right of failed
+  Terminal.
+  failureReason written.
+  ProvisionedResource unchanged\n(update) or absent (create/delete).
+  Email notification sent.
+end note
+
+provisioned --> [*]
+rejected    --> [*]
+failed      --> [*]
+
+@enduml

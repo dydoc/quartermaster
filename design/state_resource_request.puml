@@ -1,0 +1,73 @@
+@startuml state_resource_request
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam state {
+    BackgroundColor #EEEDFE
+    BorderColor #534AB7
+    FontColor #3C3489
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    StartColor #085041
+    EndColor #085041
+}
+skinparam roundcorner 8
+skinparam nodesep 55
+skinparam ranksep 50
+
+title ResourceRequest — Phase State Machine
+
+[*] --> pending : Web App creates ResourceRequest\n(action: create | update | delete)
+
+pending --> approved  : Controller — all required\napprover decisions present
+pending --> rejected  : Controller — rejection\ndecision recorded
+
+approved --> provisioning : Controller — begins\napply on target cluster
+
+state provisioning {
+    state "applying CRD\ntarget instance" as applying
+    state "watching for\nReady / absent" as watching
+    state "retrying\n(backoff)" as retrying
+    applying --> watching
+    watching --> retrying : NotReady / error
+    retrying --> applying : retry attempt
+}
+
+provisioning --> provisioned : Controller —\nReady confirmed (create/update)\nor absent confirmed (delete)
+
+provisioning --> rolling_back : Controller —\nretries exhausted (update only)
+
+state rolling_back {
+    state "re-applying\npreviousParameters" as reapply
+    state "watching for\nReady" as rbwatch
+    reapply --> rbwatch
+}
+
+rolling_back --> failed : Controller —\npre-update state restored;\nphase set to failed
+
+provisioning --> failed : Controller —\nretries exhausted\n(create / delete)
+
+note right of rejected
+  Terminal.
+  ProvisionedResource unchanged (update)\nor not created (create).
+end note
+
+note right of provisioned
+  Terminal.
+  ProvisionedResource written or\nfinalizer removed (delete).
+  Email notification sent.
+end note
+
+note right of failed
+  Terminal — failureReason written.
+  create: ProvisionedResource not created.
+  update: ProvisionedResource unchanged\n(previousParameters still operational).
+  delete: CRD target instance may still exist.
+  Email notification sent.
+end note
+
+provisioned  --> [*]
+rejected     --> [*]
+failed       --> [*]
+
+@enduml

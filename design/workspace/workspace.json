@@ -1,9 +1,9 @@
 {
   "configuration" : { },
-  "description" : "C4 Context diagram — Resource Portal v6. The portal provides self-service access to infrastructure resources on Rancher-managed Kubernetes clusters. All resource types are implemented as CRDs. User identity is propagated end-to-end through Rancher to each downstream cluster.",
+  "description" : "C4 diagrams — Resource Portal v9. Self-service portal for infrastructure resources on Rancher-managed Kubernetes clusters. User identity governs management-cluster operations; the Approval Controller acts under its own service account on target clusters.",
   "documentation" : { },
   "id" : 1,
-  "lastModifiedDate" : "2026-05-31T15:24:35Z",
+  "lastModifiedDate" : "2026-06-07T01:57:53Z",
   "model" : {
     "people" : [ {
       "description" : "Requests and monitors infrastructure resources via the portal.",
@@ -15,7 +15,13 @@
       "relationships" : [ {
         "description" : "Requests resources and monitors status",
         "destinationId" : "6",
-        "id" : "7",
+        "id" : "13",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Browses catalogue, submits requests, monitors status [HTTPS]",
+        "destinationId" : "7",
+        "id" : "19",
         "sourceId" : "1",
         "tags" : "Relationship"
       } ],
@@ -30,7 +36,13 @@
       "relationships" : [ {
         "description" : "Reviews and approves requests",
         "destinationId" : "6",
-        "id" : "8",
+        "id" : "14",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Reviews and approves/rejects requests [HTTPS]",
+        "destinationId" : "7",
+        "id" : "20",
         "sourceId" : "2",
         "tags" : "Relationship"
       } ],
@@ -45,14 +57,20 @@
       "relationships" : [ {
         "description" : "Configures policies and resource catalogue",
         "destinationId" : "6",
-        "id" : "9",
+        "id" : "15",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Manages resource catalogue and policies [HTTPS]",
+        "destinationId" : "7",
+        "id" : "21",
         "sourceId" : "3",
         "tags" : "Relationship"
       } ],
       "tags" : "Element,Person,Actor"
     } ],
     "softwareSystems" : [ {
-      "description" : "Central authentication service (Keycloak / LDAP / SSO). Shared by the portal and all downstream clusters — user identity is consistent end-to-end.",
+      "description" : "Central authentication service (Keycloak / LDAP / SSO). Shared by the portal and all downstream clusters.",
       "documentation" : { },
       "id" : "4",
       "name" : "Identity Provider",
@@ -61,7 +79,7 @@
       },
       "tags" : "Element,Software System,External"
     }, {
-      "description" : "Rancher (authn/RBAC proxy) + Rancher-managed K8s clusters. User identity propagated end-to-end. Each resource type backed by a CRD and a reconciling controller.",
+      "description" : "Rancher (authn/RBAC proxy) + Rancher-managed K8s clusters. The Approval Controller applies CRD target instances under its own service account; end users hold no permissions on those types.",
       "documentation" : { },
       "id" : "5",
       "name" : "Platform Infrastructure",
@@ -71,13 +89,124 @@
       "relationships" : [ {
         "description" : "Verifies user tokens via OIDC",
         "destinationId" : "4",
-        "id" : "12",
+        "id" : "17",
         "sourceId" : "5",
         "tags" : "Relationship"
       } ],
       "tags" : "Element,Software System,PlatformInternal"
     }, {
-      "description" : "Self-service portal for requesting and managing infrastructure resources. Translates approved requests into CRD manifests applied on the target clusters.",
+      "containers" : [ {
+        "description" : "Server-side rendered monolith. Handles HTTP sessions, renders UI, resolves approver list at submission time, and maintains a local informer cache for live resource state.",
+        "documentation" : { },
+        "id" : "7",
+        "name" : "Web Application",
+        "properties" : {
+          "structurizr.dsl.identifier" : "webApp"
+        },
+        "relationships" : [ {
+          "description" : "Authenticates session via OIDC",
+          "destinationId" : "4",
+          "id" : "22",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Creates ResourceRequest; records approver decisions",
+          "destinationId" : "9",
+          "id" : "23",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Reads resource types and approval policy at submission time",
+          "destinationId" : "11",
+          "id" : "24",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Reads live state via informer cache (no polling)",
+          "destinationId" : "10",
+          "id" : "25",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Container WebApp",
+        "technology" : "HTTPS"
+      }, {
+        "description" : "Kubernetes controller (controller-runtime). Drives the ResourceRequest state machine; applies CRD target instances on downstream clusters under its own service account via SSA. The Health Observer monitors CRD target instance health and restores out-of-band deletions. Derived object drift is corrected by the CRD target controller.",
+        "documentation" : { },
+        "id" : "8",
+        "name" : "Approval Controller",
+        "properties" : {
+          "structurizr.dsl.identifier" : "approvalController"
+        },
+        "relationships" : [ {
+          "description" : "Watches events; drives phase transitions",
+          "destinationId" : "9",
+          "id" : "26",
+          "sourceId" : "8",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Creates/updates on confirmed provisioning; manages deprovisioning finalizer",
+          "destinationId" : "10",
+          "id" : "27",
+          "sourceId" : "8",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Applies/deletes CRD target instances via SSA; Health Observer reads instance status read-only",
+          "destinationId" : "5",
+          "id" : "28",
+          "sourceId" : "8",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Sends notification on provisioned / failed",
+          "destinationId" : "12",
+          "id" : "29",
+          "sourceId" : "8",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Container Controller",
+        "technology" : "Go, controller-runtime"
+      }, {
+        "description" : "Full lifecycle of a resource request: pending → approved/rejected → provisioning → provisioned/failed. Carries embedded approval policy, pre-resolved approver list, and previousParameters for update rollback. Critical spec fields are immutable via CEL rules.",
+        "documentation" : { },
+        "id" : "9",
+        "name" : "ResourceRequest CRD",
+        "properties" : {
+          "structurizr.dsl.identifier" : "resourceRequestCRD"
+        },
+        "tags" : "Element,Container,Container CRD",
+        "technology" : "Kubernetes CRD (cluster: management)"
+      }, {
+        "description" : "Authoritative record of a confirmed-operational provisioned resource. Written only after Ready confirmation on the target cluster. Carries a deprovisioning finalizer; read by the Web App informer for live status display.",
+        "documentation" : { },
+        "id" : "10",
+        "name" : "ProvisionedResource CRD",
+        "properties" : {
+          "structurizr.dsl.identifier" : "provisionedResourceCRD"
+        },
+        "tags" : "Element,Container,Container CRD",
+        "technology" : "Kubernetes CRD (cluster: management)"
+      }, {
+        "description" : "Defines available resource types, quota limits, and approval routing rules. Managed by Platform Admins; read by the Web App at submission time.",
+        "documentation" : { },
+        "id" : "11",
+        "name" : "ResourceCatalogue CRD",
+        "properties" : {
+          "structurizr.dsl.identifier" : "resourceCatalogueCRD"
+        },
+        "tags" : "Element,Container,Container CRD",
+        "technology" : "Kubernetes CRD (cluster: management)"
+      }, {
+        "description" : "SMTP relay. Delivers state-change notifications to requesters on provisioned and failed transitions.",
+        "documentation" : { },
+        "id" : "12",
+        "name" : "Mail Relay",
+        "properties" : {
+          "structurizr.dsl.identifier" : "mailRelay"
+        },
+        "tags" : "Element,Container,Container External",
+        "technology" : "SMTP"
+      } ],
+      "description" : "Self-service portal for requesting and managing infrastructure resources on Kubernetes clusters.",
       "documentation" : { },
       "id" : "6",
       "name" : "Resource Portal",
@@ -87,13 +216,13 @@
       "relationships" : [ {
         "description" : "Authenticates users via OIDC",
         "destinationId" : "4",
-        "id" : "10",
+        "id" : "16",
         "sourceId" : "6",
         "tags" : "Relationship"
       }, {
-        "description" : "Applies CRDs and reads resource state (user identity end-to-end)",
+        "description" : "Web App reads cluster state as user; Controller applies CRD target instances as service account",
         "destinationId" : "5",
-        "id" : "11",
+        "id" : "18",
         "sourceId" : "6",
         "tags" : "Relationship"
       } ],
@@ -102,14 +231,15 @@
   },
   "name" : "Resource Portal",
   "properties" : {
-    "structurizr.inspection.error" : "7",
-    "structurizr.dsl" : "d29ya3NwYWNlICJSZXNvdXJjZSBQb3J0YWwiICJDNCBDb250ZXh0IGRpYWdyYW0g4oCUIFJlc291cmNlIFBvcnRhbCB2Ni4gVGhlIHBvcnRhbCBwcm92aWRlcyBzZWxmLXNlcnZpY2UgYWNjZXNzIHRvIGluZnJhc3RydWN0dXJlIHJlc291cmNlcyBvbiBSYW5jaGVyLW1hbmFnZWQgS3ViZXJuZXRlcyBjbHVzdGVycy4gQWxsIHJlc291cmNlIHR5cGVzIGFyZSBpbXBsZW1lbnRlZCBhcyBDUkRzLiBVc2VyIGlkZW50aXR5IGlzIHByb3BhZ2F0ZWQgZW5kLXRvLWVuZCB0aHJvdWdoIFJhbmNoZXIgdG8gZWFjaCBkb3duc3RyZWFtIGNsdXN0ZXIuIiB7CgogICAgbW9kZWwgewoKICAgICAgICAjIOKUgOKUgCBIdW1hbiBhY3RvcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgZW5kVXNlciA9IHBlcnNvbiAiRW5kIFVzZXIiICJSZXF1ZXN0cyBhbmQgbW9uaXRvcnMgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzIHZpYSB0aGUgcG9ydGFsLiIgewogICAgICAgICAgICB0YWdzICJBY3RvciIKICAgICAgICB9CgogICAgICAgIGFwcHJvdmVyID0gcGVyc29uICJBcHByb3ZlciIgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlc291cmNlIHJlcXVlc3RzIGJlZm9yZSBwcm92aXNpb25pbmcuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgcGxhdGZvcm1BZG1pbiA9IHBlcnNvbiAiUGxhdGZvcm0gQWRtaW4iICJDb25maWd1cmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGFzLCBhbmQgYXBwcm92YWwgcG9saWNpZXMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgRXh0ZXJuYWwgc3lzdGVtcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBpZHAgPSBzb2Z0d2FyZVN5c3RlbSAiSWRlbnRpdHkgUHJvdmlkZXIiICJDZW50cmFsIGF1dGhlbnRpY2F0aW9uIHNlcnZpY2UgKEtleWNsb2FrIC8gTERBUCAvIFNTTykuIFNoYXJlZCBieSB0aGUgcG9ydGFsIGFuZCBhbGwgZG93bnN0cmVhbSBjbHVzdGVycyDigJQgdXNlciBpZGVudGl0eSBpcyBjb25zaXN0ZW50IGVuZC10by1lbmQuIiB7CiAgICAgICAgICAgIHRhZ3MgIkV4dGVybmFsIgogICAgICAgIH0KCiAgICAgICAgIyBSYW5jaGVyIGFuZCB0aGUgZG93bnN0cmVhbSBjbHVzdGVycyBhcmUgY29sbGFwc2VkIGludG8gYSBzaW5nbGUgYm91bmRhcnk6CiAgICAgICAgIyBSYW5jaGVyIGFjdHMgYXMgYW4gYXV0aG4vUkJBQyBwcm94eTsgaXQgZG9lcyBub3QgYWN0IGF1dG9ub21vdXNseSBvbiBjbHVzdGVycy4KICAgICAgICAjIFRoZSBkb3duc3RyZWFtIGNsdXN0ZXJzIGhvc3QgdGhlIENSRHMgYW5kIGNvbnRyb2xsZXJzIHRoYXQgcmVjb25jaWxlIHJlc291cmNlIHN0YXRlLgogICAgICAgIHBsYXRmb3JtSW5mcmEgPSBzb2Z0d2FyZVN5c3RlbSAiUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUiICJSYW5jaGVyIChhdXRobi9SQkFDIHByb3h5KSArIFJhbmNoZXItbWFuYWdlZCBLOHMgY2x1c3RlcnMuIFVzZXIgaWRlbnRpdHkgcHJvcGFnYXRlZCBlbmQtdG8tZW5kLiBFYWNoIHJlc291cmNlIHR5cGUgYmFja2VkIGJ5IGEgQ1JEIGFuZCBhIHJlY29uY2lsaW5nIGNvbnRyb2xsZXIuIiB7CiAgICAgICAgICAgIHRhZ3MgIlBsYXRmb3JtSW50ZXJuYWwiCiAgICAgICAgfQoKICAgICAgICAjIOKUgOKUgCBTeXN0ZW0gaW4gc2NvcGUg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgcmVzb3VyY2VQb3J0YWwgPSBzb2Z0d2FyZVN5c3RlbSAiUmVzb3VyY2UgUG9ydGFsIiAiU2VsZi1zZXJ2aWNlIHBvcnRhbCBmb3IgcmVxdWVzdGluZyBhbmQgbWFuYWdpbmcgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzLiBUcmFuc2xhdGVzIGFwcHJvdmVkIHJlcXVlc3RzIGludG8gQ1JEIG1hbmlmZXN0cyBhcHBsaWVkIG9uIHRoZSB0YXJnZXQgY2x1c3RlcnMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkluU2NvcGUiCiAgICAgICAgfQoKICAgICAgICAjIOKUgOKUgCBSZWxhdGlvbnNoaXBzIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAoKICAgICAgICAjIEFjdG9ycyDihpIgUmVzb3VyY2UgUG9ydGFsCiAgICAgICAgZW5kVXNlciAgICAgICAtPiByZXNvdXJjZVBvcnRhbCAiUmVxdWVzdHMgcmVzb3VyY2VzIGFuZCBtb25pdG9ycyBzdGF0dXMiCiAgICAgICAgYXBwcm92ZXIgICAgICAtPiByZXNvdXJjZVBvcnRhbCAiUmV2aWV3cyBhbmQgYXBwcm92ZXMgcmVxdWVzdHMiCiAgICAgICAgcGxhdGZvcm1BZG1pbiAtPiByZXNvdXJjZVBvcnRhbCAiQ29uZmlndXJlcyBwb2xpY2llcyBhbmQgcmVzb3VyY2UgY2F0YWxvZ3VlIgoKICAgICAgICAjIFJlc291cmNlIFBvcnRhbCDihpIgSWRlbnRpdHkgUHJvdmlkZXIKICAgICAgICByZXNvdXJjZVBvcnRhbCAtPiBpZHAgIkF1dGhlbnRpY2F0ZXMgdXNlcnMgdmlhIE9JREMiCgogICAgICAgICMgUmVzb3VyY2UgUG9ydGFsIOKGkiBQbGF0Zm9ybSBJbmZyYXN0cnVjdHVyZQogICAgICAgIHJlc291cmNlUG9ydGFsIC0+IHBsYXRmb3JtSW5mcmEgIkFwcGxpZXMgQ1JEcyBhbmQgcmVhZHMgcmVzb3VyY2Ugc3RhdGUgKHVzZXIgaWRlbnRpdHkgZW5kLXRvLWVuZCkiCiAgICAgICAgcGxhdGZvcm1JbmZyYSAtPiBpZHAgIlZlcmlmaWVzIHVzZXIgdG9rZW5zIHZpYSBPSURDIgogICAgfQoKICAgIHZpZXdzIHsKCiAgICAgICAgc3lzdGVtQ29udGV4dCByZXNvdXJjZVBvcnRhbCAiQzRDb250ZXh0X1Jlc291cmNlUG9ydGFsIiB7CiAgICAgICAgICAgIHRpdGxlICJSZXNvdXJjZSBQb3J0YWwg4oCUIFN5c3RlbSBDb250ZXh0IgogICAgICAgICAgICBkZXNjcmlwdGlvbiAiU2hvd3MgdGhlIFJlc291cmNlIFBvcnRhbCBhbmQgaXRzIHJlbGF0aW9uc2hpcHMgd2l0aCB1c2VycywgdGhlIElkZW50aXR5IFByb3ZpZGVyLCBhbmQgdGhlIFBsYXRmb3JtIEluZnJhc3RydWN0dXJlIChSYW5jaGVyICsgZG93bnN0cmVhbSBLdWJlcm5ldGVzIGNsdXN0ZXJzKS4iCiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvTGF5b3V0CiAgICAgICAgfQoKICAgICAgICBzdHlsZXMgewogICAgICAgICAgICBlbGVtZW50ICJBY3RvciIgewogICAgICAgICAgICAgICAgc2hhcGUgUGVyc29uCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFMUY1RUUKICAgICAgICAgICAgICAgIGNvbG9yICMwODUwNDEKICAgICAgICAgICAgICAgIHN0cm9rZSAjMEY2RTU2CiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiSW5TY29wZSIgewoKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJQbGF0Zm9ybUludGVybmFsIiB7CiAgICAgICAgICAgICAgICB3aWR0aCAzODAKICAgICAgICAgICAgICAgIGhlaWdodCA0MDAKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0ZGRjNDRAogICAgICAgICAgICAgICAgY29sb3IgIzdBNEYwMAogICAgICAgICAgICAgICAgc3Ryb2tlICNCMDdEMDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJFeHRlcm5hbCIgewogICAgICAgICAgICAgICAgd2lkdGggMjgwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDAwCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGMUVGRTgKICAgICAgICAgICAgICAgIGNvbG9yICM0NDQ0M0YKICAgICAgICAgICAgICAgIHN0cm9rZSAjNUY1RTVBCiAgICAgICAgICAgIH0KICAgICAgICAgICAgcmVsYXRpb25zaGlwICJSZWxhdGlvbnNoaXAiIHsKICAgICAgICAgICAgICAgIGNvbG9yICM3MzcyNjYKICAgICAgICAgICAgICAgIHN0eWxlIGRhc2hlZAogICAgICAgICAgICAgICAgdGhpY2tuZXNzIDIKICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KfQ==",
+    "structurizr.inspection.error" : "20",
+    "structurizr.dsl" : "d29ya3NwYWNlICJSZXNvdXJjZSBQb3J0YWwiICJDNCBkaWFncmFtcyDigJQgUmVzb3VyY2UgUG9ydGFsIHY5LiBTZWxmLXNlcnZpY2UgcG9ydGFsIGZvciBpbmZyYXN0cnVjdHVyZSByZXNvdXJjZXMgb24gUmFuY2hlci1tYW5hZ2VkIEt1YmVybmV0ZXMgY2x1c3RlcnMuIFVzZXIgaWRlbnRpdHkgZ292ZXJucyBtYW5hZ2VtZW50LWNsdXN0ZXIgb3BlcmF0aW9uczsgdGhlIEFwcHJvdmFsIENvbnRyb2xsZXIgYWN0cyB1bmRlciBpdHMgb3duIHNlcnZpY2UgYWNjb3VudCBvbiB0YXJnZXQgY2x1c3RlcnMuIiB7CgogICAgbW9kZWwgewoKICAgICAgICAjIOKUgOKUgCBIdW1hbiBhY3RvcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgZW5kVXNlciA9IHBlcnNvbiAiRW5kIFVzZXIiICJSZXF1ZXN0cyBhbmQgbW9uaXRvcnMgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzIHZpYSB0aGUgcG9ydGFsLiIgewogICAgICAgICAgICB0YWdzICJBY3RvciIKICAgICAgICB9CgogICAgICAgIGFwcHJvdmVyID0gcGVyc29uICJBcHByb3ZlciIgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlc291cmNlIHJlcXVlc3RzIGJlZm9yZSBwcm92aXNpb25pbmcuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgcGxhdGZvcm1BZG1pbiA9IHBlcnNvbiAiUGxhdGZvcm0gQWRtaW4iICJDb25maWd1cmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGFzLCBhbmQgYXBwcm92YWwgcG9saWNpZXMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgRXh0ZXJuYWwgc3lzdGVtcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBpZHAgPSBzb2Z0d2FyZVN5c3RlbSAiSWRlbnRpdHkgUHJvdmlkZXIiICJDZW50cmFsIGF1dGhlbnRpY2F0aW9uIHNlcnZpY2UgKEtleWNsb2FrIC8gTERBUCAvIFNTTykuIFNoYXJlZCBieSB0aGUgcG9ydGFsIGFuZCBhbGwgZG93bnN0cmVhbSBjbHVzdGVycy4iIHsKICAgICAgICAgICAgdGFncyAiRXh0ZXJuYWwiCiAgICAgICAgfQoKICAgICAgICAjIFJhbmNoZXIgYWN0cyBhcyBhbiBhdXRobi9SQkFDIHByb3h5OyBpdCBkb2VzIG5vdCBhY3QgYXV0b25vbW91c2x5IG9uIGNsdXN0ZXJzLgogICAgICAgICMgVGhlIGRvd25zdHJlYW0gY2x1c3RlcnMgaG9zdCB0aGUgQ1JEIHRhcmdldCBpbnN0YW5jZXMgYW5kIGNvbnRyb2xsZXJzLgogICAgICAgIHBsYXRmb3JtSW5mcmEgPSBzb2Z0d2FyZVN5c3RlbSAiUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUiICJSYW5jaGVyIChhdXRobi9SQkFDIHByb3h5KSArIFJhbmNoZXItbWFuYWdlZCBLOHMgY2x1c3RlcnMuIFRoZSBBcHByb3ZhbCBDb250cm9sbGVyIGFwcGxpZXMgQ1JEIHRhcmdldCBpbnN0YW5jZXMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQ7IGVuZCB1c2VycyBob2xkIG5vIHBlcm1pc3Npb25zIG9uIHRob3NlIHR5cGVzLiIgewogICAgICAgICAgICB0YWdzICJQbGF0Zm9ybUludGVybmFsIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgU3lzdGVtIGluIHNjb3BlIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgIHJlc291cmNlUG9ydGFsID0gc29mdHdhcmVTeXN0ZW0gIlJlc291cmNlIFBvcnRhbCIgIlNlbGYtc2VydmljZSBwb3J0YWwgZm9yIHJlcXVlc3RpbmcgYW5kIG1hbmFnaW5nIGluZnJhc3RydWN0dXJlIHJlc291cmNlcyBvbiBLdWJlcm5ldGVzIGNsdXN0ZXJzLiIgewogICAgICAgICAgICB0YWdzICJJblNjb3BlIgoKICAgICAgICAgICAgIyDilIDilIAgQ29udGFpbmVycyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgICAgIHdlYkFwcCA9IGNvbnRhaW5lciAiV2ViIEFwcGxpY2F0aW9uIiAiU2VydmVyLXNpZGUgcmVuZGVyZWQgbW9ub2xpdGguIEhhbmRsZXMgSFRUUCBzZXNzaW9ucywgcmVuZGVycyBVSSwgcmVzb2x2ZXMgYXBwcm92ZXIgbGlzdCBhdCBzdWJtaXNzaW9uIHRpbWUsIGFuZCBtYWludGFpbnMgYSBsb2NhbCBpbmZvcm1lciBjYWNoZSBmb3IgbGl2ZSByZXNvdXJjZSBzdGF0ZS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBXZWJBcHAiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJIVFRQUyIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgYXBwcm92YWxDb250cm9sbGVyID0gY29udGFpbmVyICJBcHByb3ZhbCBDb250cm9sbGVyIiAiS3ViZXJuZXRlcyBjb250cm9sbGVyIChjb250cm9sbGVyLXJ1bnRpbWUpLiBEcml2ZXMgdGhlIFJlc291cmNlUmVxdWVzdCBzdGF0ZSBtYWNoaW5lOyBhcHBsaWVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIG9uIGRvd25zdHJlYW0gY2x1c3RlcnMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQgdmlhIFNTQS4gVGhlIEhlYWx0aCBPYnNlcnZlciBtb25pdG9ycyBDUkQgdGFyZ2V0IGluc3RhbmNlIGhlYWx0aCBhbmQgcmVzdG9yZXMgb3V0LW9mLWJhbmQgZGVsZXRpb25zLiBEZXJpdmVkIG9iamVjdCBkcmlmdCBpcyBjb3JyZWN0ZWQgYnkgdGhlIENSRCB0YXJnZXQgY29udHJvbGxlci4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBDb250cm9sbGVyIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiR28sIGNvbnRyb2xsZXItcnVudGltZSIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgcmVzb3VyY2VSZXF1ZXN0Q1JEID0gY29udGFpbmVyICJSZXNvdXJjZVJlcXVlc3QgQ1JEIiAiRnVsbCBsaWZlY3ljbGUgb2YgYSByZXNvdXJjZSByZXF1ZXN0OiBwZW5kaW5nIOKGkiBhcHByb3ZlZC9yZWplY3RlZCDihpIgcHJvdmlzaW9uaW5nIOKGkiBwcm92aXNpb25lZC9mYWlsZWQuIENhcnJpZXMgZW1iZWRkZWQgYXBwcm92YWwgcG9saWN5LCBwcmUtcmVzb2x2ZWQgYXBwcm92ZXIgbGlzdCwgYW5kIHByZXZpb3VzUGFyYW1ldGVycyBmb3IgdXBkYXRlIHJvbGxiYWNrLiBDcml0aWNhbCBzcGVjIGZpZWxkcyBhcmUgaW1tdXRhYmxlIHZpYSBDRUwgcnVsZXMuIiB7CiAgICAgICAgICAgICAgICB0YWdzICJDb250YWluZXIgQ1JEIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiS3ViZXJuZXRlcyBDUkQgKGNsdXN0ZXI6IG1hbmFnZW1lbnQpIgogICAgICAgICAgICB9CgogICAgICAgICAgICBwcm92aXNpb25lZFJlc291cmNlQ1JEID0gY29udGFpbmVyICJQcm92aXNpb25lZFJlc291cmNlIENSRCIgIkF1dGhvcml0YXRpdmUgcmVjb3JkIG9mIGEgY29uZmlybWVkLW9wZXJhdGlvbmFsIHByb3Zpc2lvbmVkIHJlc291cmNlLiBXcml0dGVuIG9ubHkgYWZ0ZXIgUmVhZHkgY29uZmlybWF0aW9uIG9uIHRoZSB0YXJnZXQgY2x1c3Rlci4gQ2FycmllcyBhIGRlcHJvdmlzaW9uaW5nIGZpbmFsaXplcjsgcmVhZCBieSB0aGUgV2ViIEFwcCBpbmZvcm1lciBmb3IgbGl2ZSBzdGF0dXMgZGlzcGxheS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBDUkQiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJLdWJlcm5ldGVzIENSRCAoY2x1c3RlcjogbWFuYWdlbWVudCkiCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIHJlc291cmNlQ2F0YWxvZ3VlQ1JEID0gY29udGFpbmVyICJSZXNvdXJjZUNhdGFsb2d1ZSBDUkQiICJEZWZpbmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGEgbGltaXRzLCBhbmQgYXBwcm92YWwgcm91dGluZyBydWxlcy4gTWFuYWdlZCBieSBQbGF0Zm9ybSBBZG1pbnM7IHJlYWQgYnkgdGhlIFdlYiBBcHAgYXQgc3VibWlzc2lvbiB0aW1lLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIENSRCIKICAgICAgICAgICAgICAgIHRlY2hub2xvZ3kgIkt1YmVybmV0ZXMgQ1JEIChjbHVzdGVyOiBtYW5hZ2VtZW50KSIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgbWFpbFJlbGF5ID0gY29udGFpbmVyICJNYWlsIFJlbGF5IiAiU01UUCByZWxheS4gRGVsaXZlcnMgc3RhdGUtY2hhbmdlIG5vdGlmaWNhdGlvbnMgdG8gcmVxdWVzdGVycyBvbiBwcm92aXNpb25lZCBhbmQgZmFpbGVkIHRyYW5zaXRpb25zLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIEV4dGVybmFsIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiU01UUCIKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgUmVsYXRpb25zaGlwcyDigJQgU3lzdGVtIENvbnRleHQg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACgogICAgICAgIGVuZFVzZXIgICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJlcXVlc3RzIHJlc291cmNlcyBhbmQgbW9uaXRvcnMgc3RhdHVzIgogICAgICAgIGFwcHJvdmVyICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlcXVlc3RzIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gcmVzb3VyY2VQb3J0YWwgIkNvbmZpZ3VyZXMgcG9saWNpZXMgYW5kIHJlc291cmNlIGNhdGFsb2d1ZSIKCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gaWRwICAgICAgICAgICAiQXV0aGVudGljYXRlcyB1c2VycyB2aWEgT0lEQyIKICAgICAgICBwbGF0Zm9ybUluZnJhICAtPiBpZHAgICAgICAgICAgICJWZXJpZmllcyB1c2VyIHRva2VucyB2aWEgT0lEQyIKCiAgICAgICAgIyBXZWIgQXBwIGF1dGhlbnRpY2F0ZXMgYXMgdGhlIGxvZ2dlZC1pbiB1c2VyICh2aWEgUmFuY2hlciBwcm94eSkuCiAgICAgICAgIyBBcHByb3ZhbCBDb250cm9sbGVyIGF1dGhlbnRpY2F0ZXMgYXMgaXRzIG93biBzZXJ2aWNlIGFjY291bnQuCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gcGxhdGZvcm1JbmZyYSAiV2ViIEFwcCByZWFkcyBjbHVzdGVyIHN0YXRlIGFzIHVzZXI7IENvbnRyb2xsZXIgYXBwbGllcyBDUkQgdGFyZ2V0IGluc3RhbmNlcyBhcyBzZXJ2aWNlIGFjY291bnQiCgogICAgICAgICMg4pSA4pSAIFJlbGF0aW9uc2hpcHMg4oCUIENvbnRhaW5lciBsZXZlbCDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgZW5kVXNlciAgICAgICAtPiB3ZWJBcHAgIkJyb3dzZXMgY2F0YWxvZ3VlLCBzdWJtaXRzIHJlcXVlc3RzLCBtb25pdG9ycyBzdGF0dXMgW0hUVFBTXSIKICAgICAgICBhcHByb3ZlciAgICAgIC0+IHdlYkFwcCAiUmV2aWV3cyBhbmQgYXBwcm92ZXMvcmVqZWN0cyByZXF1ZXN0cyBbSFRUUFNdIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gd2ViQXBwICJNYW5hZ2VzIHJlc291cmNlIGNhdGFsb2d1ZSBhbmQgcG9saWNpZXMgW0hUVFBTXSIKCiAgICAgICAgd2ViQXBwIC0+IGlkcCAgICAgICAgICAgICAgICAgIkF1dGhlbnRpY2F0ZXMgc2Vzc2lvbiB2aWEgT0lEQyIKICAgICAgICB3ZWJBcHAgLT4gcmVzb3VyY2VSZXF1ZXN0Q1JEICAiQ3JlYXRlcyBSZXNvdXJjZVJlcXVlc3Q7IHJlY29yZHMgYXBwcm92ZXIgZGVjaXNpb25zIgogICAgICAgIHdlYkFwcCAtPiByZXNvdXJjZUNhdGFsb2d1ZUNSRCAiUmVhZHMgcmVzb3VyY2UgdHlwZXMgYW5kIGFwcHJvdmFsIHBvbGljeSBhdCBzdWJtaXNzaW9uIHRpbWUiCiAgICAgICAgd2ViQXBwIC0+IHByb3Zpc2lvbmVkUmVzb3VyY2VDUkQgIlJlYWRzIGxpdmUgc3RhdGUgdmlhIGluZm9ybWVyIGNhY2hlIChubyBwb2xsaW5nKSIKCiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHJlc291cmNlUmVxdWVzdENSRCAgICAgIldhdGNoZXMgZXZlbnRzOyBkcml2ZXMgcGhhc2UgdHJhbnNpdGlvbnMiCiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHByb3Zpc2lvbmVkUmVzb3VyY2VDUkQgIkNyZWF0ZXMvdXBkYXRlcyBvbiBjb25maXJtZWQgcHJvdmlzaW9uaW5nOyBtYW5hZ2VzIGRlcHJvdmlzaW9uaW5nIGZpbmFsaXplciIKICAgICAgICBhcHByb3ZhbENvbnRyb2xsZXIgLT4gcGxhdGZvcm1JbmZyYSAgICAgICAgICAiQXBwbGllcy9kZWxldGVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIHZpYSBTU0E7IEhlYWx0aCBPYnNlcnZlciByZWFkcyBpbnN0YW5jZSBzdGF0dXMgcmVhZC1vbmx5IgogICAgICAgIGFwcHJvdmFsQ29udHJvbGxlciAtPiBtYWlsUmVsYXkgICAgICAgICAgICAgICJTZW5kcyBub3RpZmljYXRpb24gb24gcHJvdmlzaW9uZWQgLyBmYWlsZWQiCiAgICB9CgogICAgdmlld3MgewoKICAgICAgICAjIOKUgOKUgCBDNCBDb250ZXh0IOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgIHN5c3RlbUNvbnRleHQgcmVzb3VyY2VQb3J0YWwgIkM0Q29udGV4dF9SZXNvdXJjZVBvcnRhbCIgewogICAgICAgICAgICB0aXRsZSAiUmVzb3VyY2UgUG9ydGFsIOKAlCBTeXN0ZW0gQ29udGV4dCIKICAgICAgICAgICAgZGVzY3JpcHRpb24gIlNob3dzIHRoZSBSZXNvdXJjZSBQb3J0YWwgYW5kIGl0cyByZWxhdGlvbnNoaXBzIHdpdGggdXNlcnMsIHRoZSBJZGVudGl0eSBQcm92aWRlciwgYW5kIHRoZSBQbGF0Zm9ybSBJbmZyYXN0cnVjdHVyZSAoUmFuY2hlciArIGRvd25zdHJlYW0gS3ViZXJuZXRlcyBjbHVzdGVycykuIgogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICB9CgogICAgICAgICMg4pSA4pSAIEM0IENvbnRhaW5lciDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBjb250YWluZXIgcmVzb3VyY2VQb3J0YWwgIkM0Q29udGFpbmVyX1Jlc291cmNlUG9ydGFsIiB7CiAgICAgICAgICAgIHRpdGxlICJSZXNvdXJjZSBQb3J0YWwg4oCUIENvbnRhaW5lcnMiCiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJJbnRlcm5hbCBzdHJ1Y3R1cmUgb2YgdGhlIFJlc291cmNlIFBvcnRhbCBkZXBsb3llZCBvbiB0aGUgUmFuY2hlciBtYW5hZ2VtZW50IGNsdXN0ZXIuIFRoZSBjb21wb25lbnQtbGV2ZWwgZGV0YWlsIG9mIHRoZSBXZWIgQXBwbGljYXRpb24gYW5kIEFwcHJvdmFsIENvbnRyb2xsZXIgaXMgZG9jdW1lbnRlZCB2aWEgUGxhbnRVTUwgc2VxdWVuY2UgYW5kIHN0YXRlIGRpYWdyYW1zLiIKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgfQoKICAgICAgICBzdHlsZXMgewoKICAgICAgICAgICAgIyDilIDilIAgUGVvcGxlIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgICAgICBlbGVtZW50ICJBY3RvciIgewogICAgICAgICAgICAgICAgc2hhcGUgUGVyc29uCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFMUY1RUUKICAgICAgICAgICAgICAgIGNvbG9yICMwODUwNDEKICAgICAgICAgICAgICAgIHN0cm9rZSAjMEY2RTU2CiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIFNvZnR3YXJlIFN5c3RlbXMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIGVsZW1lbnQgIkluU2NvcGUiIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJQbGF0Zm9ybUludGVybmFsIiB7CiAgICAgICAgICAgICAgICB3aWR0aCAzODAKICAgICAgICAgICAgICAgIGhlaWdodCA0NzAKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0ZGRjNDRAogICAgICAgICAgICAgICAgY29sb3IgIzdBNEYwMAogICAgICAgICAgICAgICAgc3Ryb2tlICNCMDdEMDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJFeHRlcm5hbCIgewogICAgICAgICAgICAgICAgd2lkdGggMjgwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDAwCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGMUVGRTgKICAgICAgICAgICAgICAgIGNvbG9yICM0NDQ0M0YKICAgICAgICAgICAgICAgIHN0cm9rZSAjNUY1RTVBCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIENvbnRhaW5lcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIGVsZW1lbnQgIkNvbnRhaW5lciBXZWJBcHAiIHsKICAgICAgICAgICAgICAgIHNoYXBlIFJvdW5kZWRCb3gKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgICAgIHdpZHRoIDQ1MAogICAgICAgICAgICAgICAgaGVpZ2h0IDM1MAogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkNvbnRhaW5lciBDb250cm9sbGVyIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNlNmI1MTgKICAgICAgICAgICAgICAgIGNvbG9yICM3QTRGMDAKICAgICAgICAgICAgICAgIHN0cm9rZSAjQjA3RDAwCiAgICAgICAgICAgICAgICB3aWR0aCA1MDAKICAgICAgICAgICAgICAgIGhlaWdodCA1NTAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgQ1JEIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFOEY0RkQKICAgICAgICAgICAgICAgIGNvbG9yICMwQjRGNkMKICAgICAgICAgICAgICAgIHN0cm9rZSAjMUE3QkI5CiAgICAgICAgICAgICAgICB3aWR0aCA1MDAKICAgICAgICAgICAgICAgIGhlaWdodCA0MDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgRXh0ZXJuYWwiIHsKICAgICAgICAgICAgICAgIHNoYXBlIENvbXBvbmVudAogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjRjFFRkU4CiAgICAgICAgICAgICAgICBjb2xvciAjNDQ0NDNGCiAgICAgICAgICAgICAgICBzdHJva2UgIzVGNUU1QQogICAgICAgICAgICAgICAgd2lkdGggNDIwCiAgICAgICAgICAgICAgICBoZWlnaHQgMzAwCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIFJlbGF0aW9uc2hpcHMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIHJlbGF0aW9uc2hpcCAiUmVsYXRpb25zaGlwIiB7CiAgICAgICAgICAgICAgICBjb2xvciAjNzM3MjY2CiAgICAgICAgICAgICAgICBzdHlsZSBkYXNoZWQKICAgICAgICAgICAgICAgIHRoaWNrbmVzcyAyCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9Cn0=",
     "structurizr.inspection.info" : "0",
     "structurizr.inspection.ignore" : "0",
     "structurizr.inspection.warning" : "0"
   },
   "views" : {
     "configuration" : {
+      "lastSavedView" : "C4Container_ResourcePortal",
       "styles" : {
         "elements" : [ {
           "background" : "#e1f5ee",
@@ -117,6 +247,36 @@
           "shape" : "Person",
           "stroke" : "#0f6e56",
           "tag" : "Actor"
+        }, {
+          "background" : "#e8f4fd",
+          "color" : "#0b4f6c",
+          "height" : 400,
+          "stroke" : "#1a7bb9",
+          "tag" : "Container CRD",
+          "width" : 500
+        }, {
+          "background" : "#e6b518",
+          "color" : "#7a4f00",
+          "height" : 550,
+          "stroke" : "#b07d00",
+          "tag" : "Container Controller",
+          "width" : 500
+        }, {
+          "background" : "#f1efe8",
+          "color" : "#44443f",
+          "height" : 300,
+          "shape" : "Component",
+          "stroke" : "#5f5e5a",
+          "tag" : "Container External",
+          "width" : 420
+        }, {
+          "background" : "#eeedfe",
+          "color" : "#3c3489",
+          "height" : 350,
+          "shape" : "RoundedBox",
+          "stroke" : "#534ab7",
+          "tag" : "Container WebApp",
+          "width" : 450
         }, {
           "background" : "#f1efe8",
           "color" : "#44443f",
@@ -132,7 +292,7 @@
         }, {
           "background" : "#fff3cd",
           "color" : "#7a4f00",
-          "height" : 400,
+          "height" : 470,
           "stroke" : "#b07d00",
           "tag" : "PlatformInternal",
           "width" : 380
@@ -146,56 +306,186 @@
       },
       "terminology" : { }
     },
-    "systemContextViews" : [ {
-      "automaticLayout" : {
-        "edgeSeparation" : 50,
-        "nodeSeparation" : 50,
-        "rankDirection" : "LeftRight",
-        "rankSeparation" : 100,
-        "vertices" : true
+    "containerViews" : [ {
+      "description" : "Internal structure of the Resource Portal deployed on the Rancher management cluster. The component-level detail of the Web Application and Approval Controller is documented via PlantUML sequence and state diagrams.",
+      "dimensions" : {
+        "height" : 3085,
+        "width" : 3365
       },
-      "description" : "Shows the Resource Portal and its relationships with users, the Identity Provider, and the Platform Infrastructure (Rancher + downstream Kubernetes clusters).",
       "elements" : [ {
         "id" : "1",
-        "x" : 0,
-        "y" : 0
+        "x" : 330,
+        "y" : 143
       }, {
         "id" : "2",
-        "x" : 0,
-        "y" : 0
+        "x" : 200,
+        "y" : 998
       }, {
         "id" : "3",
-        "x" : 0,
-        "y" : 0
+        "x" : 335,
+        "y" : 1582
       }, {
         "id" : "4",
-        "x" : 0,
-        "y" : 0
+        "x" : 2795,
+        "y" : 95
       }, {
         "id" : "5",
-        "x" : 0,
-        "y" : 0
+        "x" : 2765,
+        "y" : 2355
+      }, {
+        "id" : "7",
+        "x" : 915,
+        "y" : 618
+      }, {
+        "id" : "8",
+        "x" : 990,
+        "y" : 1483
+      }, {
+        "id" : "9",
+        "x" : 2070,
+        "y" : 1263
+      }, {
+        "id" : "10",
+        "x" : 2055,
+        "y" : 1775
+      }, {
+        "id" : "11",
+        "x" : 2080,
+        "y" : 643
+      }, {
+        "id" : "12",
+        "x" : 925,
+        "y" : 2328
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "key" : "C4Container_ResourcePortal",
+      "name" : "Container View: Resource Portal",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "17",
+        "vertices" : [ {
+          "x" : 2955,
+          "y" : 1878
+        } ]
+      }, {
+        "id" : "19",
+        "vertices" : [ {
+          "x" : 530,
+          "y" : 543
+        }, {
+          "x" : 660,
+          "y" : 693
+        } ]
+      }, {
+        "id" : "20",
+        "vertices" : [ {
+          "x" : 590,
+          "y" : 1088
+        } ]
+      }, {
+        "id" : "21",
+        "vertices" : [ {
+          "x" : 780,
+          "y" : 1325
+        } ]
+      }, {
+        "id" : "22",
+        "vertices" : [ {
+          "x" : 1140,
+          "y" : 305
+        } ]
+      }, {
+        "id" : "23"
+      }, {
+        "id" : "24"
+      }, {
+        "id" : "25",
+        "vertices" : [ {
+          "x" : 1310,
+          "y" : 970
+        } ]
+      }, {
+        "id" : "26"
+      }, {
+        "id" : "27"
+      }, {
+        "id" : "28",
+        "vertices" : [ {
+          "x" : 1630,
+          "y" : 2425
+        } ]
+      }, {
+        "id" : "29"
+      } ],
+      "softwareSystemId" : "6",
+      "title" : "Resource Portal — Containers"
+    } ],
+    "systemContextViews" : [ {
+      "description" : "Shows the Resource Portal and its relationships with users, the Identity Provider, and the Platform Infrastructure (Rancher + downstream Kubernetes clusters).",
+      "dimensions" : {
+        "height" : 1700,
+        "width" : 2930
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 199,
+        "y" : 142
+      }, {
+        "id" : "2",
+        "x" : 199,
+        "y" : 592
+      }, {
+        "id" : "3",
+        "x" : 199,
+        "y" : 1042
+      }, {
+        "id" : "4",
+        "x" : 2449,
+        "y" : 592
+      }, {
+        "id" : "5",
+        "x" : 1730,
+        "y" : 765
       }, {
         "id" : "6",
-        "x" : 0,
-        "y" : 0
+        "x" : 939,
+        "y" : 642
       } ],
       "enterpriseBoundaryVisible" : true,
       "key" : "C4Context_ResourcePortal",
       "name" : "System Context View: Resource Portal",
       "order" : 1,
       "relationships" : [ {
-        "id" : "10"
+        "id" : "13",
+        "vertices" : [ {
+          "x" : 769,
+          "y" : 342
+        } ]
       }, {
-        "id" : "11"
+        "id" : "14"
       }, {
-        "id" : "12"
+        "id" : "15",
+        "vertices" : [ {
+          "x" : 769,
+          "y" : 1242
+        } ]
       }, {
-        "id" : "7"
+        "id" : "16",
+        "vertices" : [ {
+          "x" : 1559,
+          "y" : 653
+        }, {
+          "x" : 2279,
+          "y" : 653
+        } ]
       }, {
-        "id" : "8"
+        "id" : "17",
+        "vertices" : [ {
+          "x" : 2279,
+          "y" : 930
+        } ]
       }, {
-        "id" : "9"
+        "id" : "18"
       } ],
       "softwareSystemId" : "6",
       "title" : "Resource Portal — System Context"

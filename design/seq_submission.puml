@@ -1,0 +1,128 @@
+@startuml seq_submission
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    ActorBorderColor #0F6E56
+    ActorBackgroundColor #E1F5EE
+    ActorFontColor #085041
+    LifeLineBorderColor #AAAAAA
+    ParticipantBorderColor #534AB7
+    ParticipantBackgroundColor #EEEDFE
+    ParticipantFontColor #3C3489
+    BoxBorderColor #B07D00
+    BoxBackgroundColor #FFF9E6
+    NoteBackgroundColor #F5F5FF
+    NoteBorderColor #9B94E0
+}
+skinparam roundcorner 6
+
+title Web Application — Request Submission Flow
+
+actor "End User" as USR
+
+box "Web Application" #FFF9E6
+    participant "HTTP Handler" as HTTP
+    participant "OIDC Session\nManager" as OIDC
+    participant "Submission\nHandler" as SUB
+    participant "Approver\nResolver" as RES
+    participant "Informer\nCache" as CACHE
+end box
+
+participant "Identity\nProvider" as IDP    #F1EFE8
+participant "ResourceCatalogue\nCRD" as CAT    #E8F4FD
+participant "ProvisionedResource\nCRD" as PRCRD  #E8F4FD
+participant "ResourceRequest\nCRD" as RRCRD  #E8F4FD
+
+== Authentication ==
+
+USR  -> HTTP  : POST /requests/new
+HTTP -> OIDC  : validate session cookie
+
+group Failure path — unauthenticated
+    OIDC --> HTTP : invalid / expired session
+    HTTP --> USR  : 302 redirect to IdP login
+end
+
+OIDC --> HTTP : identity (username, groups)
+
+== Catalogue lookup & parameter validation ==
+
+HTTP -> SUB   : dispatch(request, identity)
+SUB  -> CAT   : get ResourceCatalogue entry
+
+group Failure path — resource type not found
+    CAT  --> SUB  : not found
+    SUB  --> HTTP : error
+    HTTP --> USR  : 404 Resource type not available
+end
+
+CAT  --> SUB  : schema, quotas, routing rule
+SUB  -> SUB   : validate parameters against schema
+
+group Failure path — validation error
+    SUB  --> HTTP : invalid parameters
+    HTTP --> USR  : 400 Validation errors (field detail)
+end
+
+SUB  -> SUB   : check quota against\nexisting ProvisionedResources
+
+group Failure path — quota exceeded
+    SUB  --> HTTP : quota exceeded
+    HTTP --> USR  : 403 Quota exceeded for this resource type
+end
+
+== Concurrency check (update / delete only) ==
+
+alt action = update or delete
+    SUB  -> CACHE : list ResourceRequest\nby label target-provisioned-resource = <UID>
+    CACHE --> SUB : active requests for same ProvisionedResource
+
+    group Failure path — concurrent request active
+        SUB  --> HTTP : conflict
+        HTTP --> USR  : 409 A request is already\nin progress for this resource
+    end
+
+    SUB  -> PRCRD : get ProvisionedResource (targetRef.name, targetRef.uid)
+
+    group Failure path — ProvisionedResource not found or UID mismatch
+        PRCRD --> SUB : not found / UID mismatch
+        SUB   --> HTTP : error
+        HTTP  --> USR  : 404 / 409 Target resource no longer exists\nor has been replaced
+    end
+
+    PRCRD --> SUB : appliedParameters → snapshotted as previousParameters
+end
+
+== Approver resolution ==
+
+SUB  -> RES   : resolve(routing rule, identity)
+RES  -> IDP   : expand LDAP groups (if needed)
+
+group Failure path — LDAP unavailable
+    IDP  --> RES  : timeout / error
+    RES  --> SUB  : resolution failed
+    SUB  --> HTTP : error
+    HTTP --> USR  : 503 Approver resolution temporarily unavailable\nPlease retry
+end
+
+IDP  --> RES  : group members
+RES  --> SUB  : concrete approver list
+
+== Write ResourceRequest ==
+
+SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\napprovalPolicy snapshot, approvers list)
+
+group Failure path — API server error
+    RRCRD --> SUB : error (conflict / server error)
+    SUB   --> HTTP : error
+    HTTP  --> USR  : 500 / 503 Could not submit request\nPlease retry
+end
+
+RRCRD --> SUB : created (phase: pending)
+SUB  --> HTTP : success
+HTTP --> USR  : 201 redirect to request status page
+
+@enduml
