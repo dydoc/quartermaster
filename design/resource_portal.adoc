@@ -1,0 +1,24 @@
+= Resource Portal — Architecture Documentation
+:toc:
+:toc-placement: preamble
+:toclevels: 3
+:sectnums:
+:icons: font
+:imagesdir: images
+
+This document collects the C4 architecture documentation for the Resource Portal across all three levels of detail: Context, Container, and Component.
+Each section corresponds to a dedicated document and can be read independently, but the levels are designed to be read in order — each one zooms into the previous.
+
+toc::[]
+
+'''
+
+include::resource_portal_c4_context.adoc[leveloffset=+1]
+
+'''
+
+include::resource_portal_c4_container.adoc[leveloffset=+1]
+
+'''
+
+include::resource_portal_c4_component.adoc[leveloffset=+1]
