@@ -16,7 +16,7 @@ A key security boundary runs through this diagram: **user identity is used only 
 
 The Web Application is a Go monolith that serves all HTTP traffic. It is server-side rendered using the standard `html/template` package — there is no separate frontend bundle or SPA framework. A single process handles session management, OIDC authentication, catalogue browsing, request submission, approval actions, and status display.
 
-At startup the Web App launches a **client-go informer** for both `ResourceRequest` and `ProvisionedResource` objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.
+At startup the Web App launches a **informer** for both `ResourceRequest` and `ProvisionedResource` objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.
 
 At submission time the Web App is responsible for **resolving the approver list**: it reads the relevant `ResourceCatalogue` entry, evaluates the approval routing rule (which may reference LDAP groups, team labels, or explicit user lists), expands it into a concrete list of approver identities, and embeds that list in the `ResourceRequest` it writes. The Approval Controller consumes the list as data — it never re-evaluates routing rules itself.
 
@@ -166,7 +166,7 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 **Pre-resolved approver list.** The Web App translates a routing rule into a list of concrete identities at submission time. The controller sees only a flat list — no LDAP lookups, no group expansion at reconcile time. This keeps the controller fast, testable, and independent of directory service availability.
 
-**Informer, not polling.** The Web App uses a client-go informer to maintain a live cache of `ResourceRequest` and `ProvisionedResource` objects. Status updates appear in the UI within the informer's resync period, driven by Kubernetes watch events, with no per-request API calls.
+**Informer, not polling.** The Web App uses a informer to maintain a live cache of `ResourceRequest` and `ProvisionedResource` objects. Status updates appear in the UI within the informer's resync period, driven by Kubernetes watch events, with no per-request API calls.
 
 **Three CRDs, all on the management cluster.** There is no portal-specific database. The management cluster's etcd is the authoritative store for all portal state. `ResourceRequest` and `ProvisionedResource` are controller-owned; `ResourceCatalogue` is admin-owned.
 
