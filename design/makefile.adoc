@@ -1,0 +1,309 @@
+= Architecture Tooling — Makefile Reference
+:toc:
+:toc-placement: preamble
+:sectnums:
+:icons: font
+
+Architecture documentation for the project using https://structurizr.com[Structurizr] and the C4 model.
+
+toc::[]
+
+== Layout
+
+[source]
+----
+design/
+├── docker-compose.yml          # Structurizr vNext (local)
+├── Makefile                    # Entry point for all commands
+├── .gitignore
+├── export/
+│   └── export.sh               # Multi-format export script
+├── plantuml/                   # Versioned .puml source files
+│   └── *.puml
+├── workspace/
+│   ├── workspace.dsl           # <- SOURCE: C4 model in DSL
+│   ├── workspace.json          # <- LAYOUT: written automatically by the UI (commit this!)
+│   └── state_resource_request.puml
+└── exported/                   # Generated artefacts (do not commit)
+    ├── png/                    # High-resolution PNG
+    ├── svg/                    # SVG (ideal for AsciiDoc / Markdown)
+    ├── svg-plantuml/           # SVG rendered from versioned .puml sources
+    ├── plantuml/               # Standard PlantUML
+    ├── plantuml-c4/            # PlantUML with C4 styles (visually closer to the UI)
+    ├── mermaid/                # Mermaid (GitHub, GitLab, MkDocs)
+    ├── dot/                    # Graphviz DOT
+    ├── ilograph/               # Ilograph (interactive)
+    ├── json/                   # Serialised workspace JSON
+    └── static/                 # Navigable static site
+----
+
+== Prerequisites
+
+Docker **or** Podman — nothing else required at the OS level.
+
+== Quick start
+
+[source,bash]
+----
+make up    # start Structurizr — runtime auto-detected
+make open  # open http://127.0.0.1:8080
+----
+
+== Runtime detection
+
+The Makefile and `export.sh` auto-detect the container runtime (Docker preferred, Podman as fallback) and the compose command. You can always pin them explicitly:
+
+[source,bash]
+----
+CONTAINER_RUNTIME=podman make up
+CONTAINER_RUNTIME=docker make export
+COMPOSE_CMD="docker-compose" make up   # pin a specific compose binary
+----
+
+Or export for the whole shell session:
+
+[source,bash]
+----
+export CONTAINER_RUNTIME=podman
+make up
+make export
+----
+
+=== Compose resolution order (Podman)
+
+The following are tried in order; the first one found is used:
+
+1. `$COMPOSE_CMD` env var — explicit override, always honoured
+2. `docker compose` plugin — works when `DOCKER_HOST` points to the Podman socket
+3. `docker-compose` standalone binary — same socket approach
+4. `podman compose` thin wrapper — requires an external provider (Podman ≥ 4.7)
+5. `podman-compose` Python package
+
+=== Podman one-time setup (openSUSE and other distros without podman-compose)
+
+The recommended approach is to expose the rootless Podman socket and point `DOCKER_HOST` at it, so that `docker-compose` works without any wrapper:
+
+[source,bash]
+----
+# 1. Enable the user-level socket (survives reboots)
+systemctl --user enable --now podman.socket
+
+# 2. Add to ~/.bashrc (or ~/.profile)
+echo 'export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock' >> ~/.bashrc
+source ~/.bashrc
+
+# 3. Install docker-compose (openSUSE)
+sudo zypper install docker-compose
+
+# 4. Verify — should show containers managed by Podman
+docker-compose version
+----
+
+There is also a convenience target that prints these steps:
+
+[source,bash]
+----
+make podman-setup
+----
+
+After the one-time setup, `make up` and `make export` work exactly like Docker.
+
+== PlantUML detection
+
+The Makefile auto-detects how to invoke PlantUML for the `plantuml-svg` and `export-plantuml-svg` targets. The resolution order is (first match wins):
+
+1. `$PLANTUML_CMD` env var — explicit override, e.g. `plantuml` or `java -jar /opt/plantuml.jar`
+2. `plantuml` binary on `PATH` — installed via `zypper install plantuml` or equivalent
+3. `java -jar` with `$PLANTUML_JAR` env var pointing to the `.jar` file
+4. Container `plantuml/plantuml` — pulled on demand via the detected container runtime
+
+Override examples:
+
+[source,bash]
+----
+PLANTUML_CMD="java -jar /opt/plantuml.jar" make plantuml-svg
+PLANTUML_JAR=/opt/plantuml.jar make plantuml-svg
+PLANTUML_CMD="docker run --rm -v $(pwd):/work plantuml/plantuml" make plantuml-svg
+----
+
+The source and destination directories can also be overridden:
+
+[source,bash]
+----
+PLANTUML_SRC=my-diagrams PLANTUML_DEST=exported/my-svg make plantuml-svg
+----
+
+[cols="1,2,2", options="header"]
+|===
+| Variable | Default | Description
+
+| `PLANTUML_CMD`
+| _(auto-detected)_
+| Full command used to invoke PlantUML
+
+| `PLANTUML_JAR`
+| _(empty)_
+| Path to `plantuml.jar`; activates `java -jar` mode when set
+
+| `PLANTUML_SRC`
+| `plantuml`
+| Directory containing versioned `.puml` source files
+
+| `PLANTUML_DEST`
+| `exported/svg-plantuml`
+| Output directory for rendered SVG files
+|===
+
+== Typical workflow
+
+[source]
+----
+1.  Edit  workspace/workspace.dsl  in your editor
+          (VS Code + Structurizr extension recommended)
+
+2.  Refresh  http://127.0.0.1:8080  -> changes appear immediately
+
+3.  Adjust the layout in the UI by dragging elements
+          -> Structurizr saves positions automatically to workspace.json
+
+4.  make export              -> produces all Structurizr export formats
+    make export-plantuml-svg -> exports PlantUML sources and renders them to SVG
+
+5.  git add workspace/workspace.dsl workspace/workspace.json
+    git commit -m "update architecture"
+----
+
+== Export formats
+
+[cols="1,2,2", options="header"]
+|===
+| Format | Command | Notes
+
+| PNG
+| `make export-png`
+| Requires `-playwright` tag; UI-faithful
+
+| SVG
+| `make export-svg`
+| Requires `-playwright` tag; ideal for docs
+
+| PlantUML
+| `make export-plantuml`
+| Standard + C4 variant
+
+| Mermaid
+| `make export-mermaid`
+| Native GitHub, GitLab, MkDocs support
+
+| DOT
+| `make export-text`
+| Graphviz, precise layout control
+
+| Ilograph
+| `make export-text`
+| Interactive visualisation
+
+| JSON
+| `make export-text`
+| Full serialised workspace
+
+| Static
+| `make export-static`
+| Offline-navigable HTML site
+
+| PlantUML → SVG
+| `make plantuml-svg`
+| Renders versioned `.puml` files in `plantuml/` to SVG; PlantUML auto-detected
+
+| PlantUML export + SVG
+| `make export-plantuml-svg`
+| Runs `export-plantuml` then `plantuml-svg` in sequence
+
+| **All**
+| `make export`
+| Runs all Structurizr export formats (does not include `plantuml-svg`)
+|===
+
+NOTE: `make export` covers all Structurizr-exported formats. The `plantuml-svg` target operates on the versioned `.puml` files in `plantuml/` and is a separate step — run `make export-plantuml-svg` to do both in one command.
+
+== Using diagrams in AsciiDoc
+
+[source,asciidoc]
+----
+// After make export-svg:
+image::../design/exported/svg/structurizr-SystemContext.svg[System Context,opts=inline]
+image::../design/exported/svg/structurizr-Containers.svg[Containers,opts=inline]
+
+// After make plantuml-svg:
+image::../design/exported/svg-plantuml/seq_submission.svg[Submission sequence,opts=inline]
+----
+
+== Using diagrams in Markdown
+
+[source,markdown]
+----
+<!-- After make export-svg: -->
+![System Context](../design/exported/svg/structurizr-SystemContext.svg)
+
+<!-- After make plantuml-svg: -->
+![Submission sequence](../design/exported/svg-plantuml/seq_submission.svg)
+----
+
+== What to commit
+
+[cols="1,2,1", options="header"]
+|===
+| File | Role | Commit?
+
+| `workspace/workspace.dsl`
+| Model: elements, relationships, views
+| ✅ Always
+
+| `workspace/workspace.json`
+| Diagram layout (element positions)
+| ✅ Always
+
+| `plantuml/*.puml`
+| Versioned PlantUML source diagrams
+| ✅ Always
+
+| `exported/*`
+| Generated artefacts
+| ❌ Never — use `make export` / `make plantuml-svg`
+|===
+
+`workspace.json` does not contain the model (that lives in the DSL) — it only stores the X/Y coordinates of elements in the UI. Without it, every restart falls back to autolayout and all manual positioning is lost.
+
+== Updating the container image
+
+[source,bash]
+----
+# Check the latest tag at https://hub.docker.com/r/structurizr/structurizr/tags
+# Update the tag in docker-compose.yml, then:
+make down
+# edit docker-compose.yml with the new tag
+make up
+----
+
+== Available commands
+
+[source]
+----
+make up                  Start Structurizr
+make down                Stop Structurizr
+make open                Open http://127.0.0.1:8080
+make export              Export all Structurizr formats (PNG, SVG, PlantUML, Mermaid, DOT, Ilograph, JSON, Static)
+make export-svg          SVG only
+make export-png          PNG only
+make export-text         PlantUML + Mermaid + DOT + Ilograph + JSON
+make export-static       Static site
+make export-plantuml     PlantUML only (C4 style)
+make export-mermaid      Mermaid only (for GitHub / GitLab / MkDocs)
+make plantuml-svg        Render versioned .puml files → SVG (uses plantuml binary, JAR, or container)
+make export-plantuml-svg Export PlantUML sources then render them to SVG
+make logs                Follow container logs
+make status              Container status
+make clean               Remove exported/
+make podman-setup        Print Podman one-time setup instructions (openSUSE / rootless)
+make help                Show detected runtime/compose and list all targets
+----
