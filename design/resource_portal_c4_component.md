@@ -1,16 +1,21 @@
 # Resource Portal — Component Diagrams
 
-This document covers the internal structure of the two runtime containers: the **Web Application** and the **Approval Controller**. Component-level decisions do not introduce new deployable units and are not reflected in the Container diagram.
+This document covers the internal structure of the two runtime containers: the **Web Application** and the **Approval Controller**. Component-level decisions do not introduce new deployable units htat are not reflected in the Container diagram.
+
+The following state machine diagram exposes the flow of a request from the user to a deployed/failed/rejected state.
+
+![Resource Portal — Resource Request State Machine](./images/state_resource_request.svg)
+
 
 ---
 
 ## Web Application — Components
 
-![Resource Portal — C4 Component Diagram: Web Application](./images/C4Component_WebApp.svg)
+![Resource Portal — C4 Component Diagram: Web Application](./images/seq_submission.svg)
 
 ### Overview
 
-The Web Application is a single Go process. All components described here are packages or logical modules within that process — they share memory, are deployed together, and communicate via function calls, not network calls. The HTTP Handler is the single entry point; all other components are invoked from within the request handling chain or from the boot sequence.
+The Web Application is a single process. All components described here are packages or logical modules within that process — they share memory, are deployed together, and communicate via function calls, not network calls. The HTTP Handler is the single entry point; all other components are invoked from within the request handling chain or from the boot sequence.
 
 ### Components
 
@@ -26,7 +31,7 @@ The Web Application is a single Go process. All components described here are pa
 
 **Status Handler** serves the resource status and history UI for End Users. It reads `ProvisionedResource` objects and the associated `ResourceRequest` history from the informer cache via label selector — `portal.example.com/created-by-request` and `portal.example.com/last-updated-by-request` — with no API server calls at page load time.
 
-**Informer Cache** is a client-go `SharedInformer` started at boot for both `ResourceRequest` and `ProvisionedResource` objects. It maintains a local in-memory store kept in sync by Kubernetes watch events. All list and get operations in the Web App go through this cache. The informer authenticates as the logged-in user via Rancher for the watch connection, so the cache only contains objects the user is authorised to see.
+**Informer Cache** is a `SharedInformer` started at boot for both `ResourceRequest` and `ProvisionedResource` objects. It maintains a local in-memory store kept in sync by Kubernetes watch events. All list and get operations in the Web App go through this cache. The informer authenticates as the logged-in user via Rancher for the watch connection, so the cache only contains objects the user is authorised to see.
 
 **Approver Resolver** translates an approval routing rule from the `ResourceCatalogue` into a concrete list of approver identities. It may perform LDAP group expansion, resolve team label annotations, or dereference explicit user lists depending on the rule type. It is called exclusively by the Submission Handler at request time. Its output is embedded in the `ResourceRequest` and is never re-evaluated by the Approval Controller.
 
@@ -42,7 +47,10 @@ The Web Application is a single Go process. All components described here are pa
 
 ## Approval Controller — Components
 
-![Resource Portal — C4 Component Diagram: Approval Controller](./images/C4Component_ApprovalController.svg)
+![Resource Portal — C4 Component Diagram: Approval Controller](./images/reconcile_create.svg)
+
+![Resource Portal — C4 Component Diagram: Approval Controller](./images/reconcile_update.svg)
+
 
 ### Two controllers, two clusters — clarification on scope
 
@@ -52,7 +60,7 @@ The **Approval Controller** lives on the **management cluster**. Its scope is en
 
 The **CRD target controller** lives on the **target cluster**. It watches the CRD target instances on that cluster and reconciles them into concrete Kubernetes objects — the derived objects. It is written by the team onboarding a new resource type into the catalogue and must comply with the portal's onboarding contract. It is the only controller that creates, updates, and enforces SSA field ownership on derived objects. It is not part of the portal codebase.
 
-The confusion around "drift reconciliation" arises because the term was used to describe two different things at two different levels. The table below makes the boundary explicit:
+The confusion around "drift reconciliation" could arises because the term was used to describe two different things at two different levels. The table below makes the boundary explicit:
 
 | Responsibility | Controller | Cluster |
 |---|---|---|
