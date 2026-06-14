@@ -34,6 +34,7 @@ design/
     ├── dot/                    # Graphviz DOT
     ├── ilograph/               # Ilograph (interactive)
     ├── json/                   # Serialised workspace JSON
+    ├── html/                   # HTML rendered from .adoc sources  (make docs-html)
     └── static/                 # Navigable static site
 ----
 
@@ -154,6 +155,58 @@ PLANTUML_SRC=my-diagrams PLANTUML_DEST=exported/my-svg make plantuml-svg
 | Output directory for rendered SVG files
 |===
 
+== AsciiDoctor detection
+
+The Makefile auto-detects how to invoke AsciiDoctor for the `docs-html` target. The resolution order is (first match wins):
+
+1. `$ASCIIDOCTOR_CMD` env var — explicit override, e.g. `asciidoctor` or `bundle exec asciidoctor`
+2. `asciidoctor` binary on `PATH` — installed via `zypper install asciidoctor`, `gem install asciidoctor`, or equivalent
+3. Container `asciidoctor/docker-asciidoctor` — pulled on demand via the detected container runtime
+
+Override examples:
+
+[source,bash]
+----
+ASCIIDOCTOR_CMD="bundle exec asciidoctor" make docs-html
+ASCIIDOCTOR_CMD="docker run --rm -v $(pwd):/documents asciidoctor/docker-asciidoctor asciidoctor" make docs-html
+----
+
+The source and destination directories can also be overridden:
+
+[source,bash]
+----
+ADOC_DEST=exported/my-html make docs-html
+----
+
+[cols="1,2,2", options="header"]
+|===
+| Variable | Default | Description
+
+| `ASCIIDOCTOR_CMD`
+| _(auto-detected)_
+| Full command used to invoke AsciiDoctor
+
+| `ADOC_SRC`
+| `.`
+| Directory containing `.adoc` source files (relative to the Makefile)
+
+| `ADOC_DEST`
+| `exported/html`
+| Output directory for rendered HTML files
+
+| `ADOC_ATTRS`
+| `-a toc -a toclevels=3 -a sectnums -a icons=font -a data-uri`
+| AsciiDoctor attributes passed to every invocation; `-a data-uri` embeds images as base64 so the HTML is fully self-contained
+
+| `ADOC_MAIN`
+| `resource_portal.adoc`
+| Main document (renders with all includes resolved)
+
+| `ADOC_STANDALONE`
+| context, container, component, makefile docs
+| Individual documents also rendered standalone
+|===
+
 == Typical workflow
 
 [source]
@@ -210,6 +263,10 @@ PLANTUML_SRC=my-diagrams PLANTUML_DEST=exported/my-svg make plantuml-svg
 | Static
 | `make export-static`
 | Offline-navigable HTML site
+
+| HTML (AsciiDoc)
+| `make docs-html` or `make docs`
+| Renders all `.adoc` sources to `exported/html/`; images embedded as data URIs (self-contained); AsciiDoctor auto-detected
 
 | PlantUML → SVG
 | `make plantuml-svg`
@@ -301,6 +358,8 @@ make export-plantuml     PlantUML only (C4 style)
 make export-mermaid      Mermaid only (for GitHub / GitLab / MkDocs)
 make plantuml-svg        Render versioned .puml files → SVG (uses plantuml binary, JAR, or container)
 make export-plantuml-svg Export PlantUML sources then render them to SVG
+make docs                Render AsciiDoc sources → HTML (alias for docs-html)
+make docs-html           Render .adoc files → exported/html/  (AsciiDoctor auto-detected)
 make logs                Follow container logs
 make status              Container status
 make clean               Remove exported/

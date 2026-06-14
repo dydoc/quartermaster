@@ -19,6 +19,7 @@
 
 .PHONY: up down export export-svg export-png export-text export-static \
         export-plantuml export-mermaid export-plantuml-svg plantuml-svg \
+        docs docs-html \
         open status logs clean podman-setup help
 
 SHELL := /bin/bash
@@ -80,6 +81,43 @@ else
   # Files are mounted read-write so the container can write SVGs alongside the .puml sources.
   _PLANTUML := $(RUNTIME) run --rm -v "$$(pwd)/$(PLANTUML_SRC):/work" -w /work plantuml/plantuml
   _PLANTUML_CONTAINER := 1
+endif
+
+# ─── AsciiDoctor detection ────────────────────────────────────────────────────
+#
+# Resolution order (first match wins):
+#   1. $$ASCIIDOCTOR_CMD  env var (e.g. "asciidoctor" or "bundle exec asciidoctor")
+#   2. `asciidoctor`      binary on PATH  (zypper install asciidoctor / gem install asciidoctor)
+#   3. Container          asciidoctor/docker-asciidoctor (pulled on demand via RUNTIME)
+#
+# Override with:
+#   ASCIIDOCTOR_CMD="bundle exec asciidoctor" make docs-html
+#   ASCIIDOCTOR_CMD="docker run --rm -v \$$(pwd):/work asciidoctor/docker-asciidoctor asciidoctor" make docs-html
+#
+# The HTML output lands in exported/html/ — one file per .adoc source.
+# The top-level resource_portal.adoc (which includes the others) is built as
+# the main document; individual sub-documents are also built standalone.
+
+# Source directory for .adoc files (relative to the Makefile)
+ADOC_SRC     ?= .
+# Destination for rendered HTML files
+ADOC_DEST    ?= exported/html
+# Attributes passed to every asciidoctor invocation
+ADOC_ATTRS   ?= -a toc -a toclevels=3 -a sectnums -a icons=font -a data-uri
+
+ifdef ASCIIDOCTOR_CMD
+  _ASCIIDOCTOR := $(ASCIIDOCTOR_CMD)
+  _ADOC_CONTAINER :=
+else ifneq ($(shell command -v asciidoctor 2>/dev/null),)
+  _ASCIIDOCTOR := asciidoctor
+  _ADOC_CONTAINER :=
+else
+  # Fallback: run the official Asciidoctor container.
+  # The CWD is mounted at /documents (the image's default WORKDIR).
+  _ASCIIDOCTOR := $(RUNTIME) run --rm \
+    -v "$$(pwd):/documents:z" \
+    asciidoctor/docker-asciidoctor asciidoctor
+  _ADOC_CONTAINER := 1
 endif
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -208,9 +246,82 @@ export-plantuml-svg: ## Export PlantUML sources then render them to SVG  (export
 	@$(MAKE) export-plantuml
 	@$(MAKE) plantuml-svg
 
+# ─── AsciiDoc → HTML ──────────────────────────────────────────────────────────
+#
+# docs        alias for docs-html (room to add docs-pdf later)
+# docs-html   render all .adoc files → exported/html/
+#
+# The main document (resource_portal.adoc) is built first; it pulls in the
+# sub-documents via include directives, producing a single self-contained HTML.
+# Each sub-document is then also rendered standalone so individual sections
+# can be linked or previewed on their own.
+#
+# Images (SVG, PNG) are embedded as base64 data URIs (-a data-uri) so each
+# HTML file is fully self-contained — no external image files required.
+# imagesdir is always set to the absolute path of the source images/ directory
+# so that relative image:: references resolve correctly before embedding.
+
+ADOC_MAIN    ?= resource_portal.adoc
+ADOC_STANDALONE ?= resource_portal_c4_context.adoc \
+                   resource_portal_c4_container.adoc \
+                   resource_portal_c4_component.adoc \
+                   makefile.adoc
+
+docs: docs-html ## Render AsciiDoc sources → HTML (alias)
+
+docs-html: ## Render .adoc files → exported/html/  (images embedded as data URIs)
+	@echo ""
+	@echo "  Engine   : $(_ASCIIDOCTOR)"
+	@echo "  Source   : $(ADOC_SRC)/"
+	@echo "  Output   : $(ADOC_DEST)/"
+	@echo "  Images   : embedded as data URIs (-a data-uri)"
+	@echo ""
+	@mkdir -p "$(ADOC_DEST)"
+	@absout=$$(pwd)/$(ADOC_DEST); \
+	abssrc=$$(pwd)/$(ADOC_SRC); \
+	echo "  [main]   $(ADOC_MAIN)"; \
+	if [ -n "$(_ADOC_CONTAINER)" ]; then \
+	  $(RUNTIME) run --rm \
+	    -v "$$abssrc:/documents:z" \
+	    asciidoctor/docker-asciidoctor asciidoctor \
+	    $(ADOC_ATTRS) \
+	    -a imagesdir=/documents/images \
+	    -D /documents/$(ADOC_DEST) \
+	    "$(ADOC_MAIN)"; \
+	else \
+	  $(_ASCIIDOCTOR) \
+	    $(ADOC_ATTRS) \
+	    -a imagesdir="$$abssrc/images" \
+	    -D "$$absout" \
+	    "$$abssrc/$(ADOC_MAIN)"; \
+	fi
+	@absout=$$(pwd)/$(ADOC_DEST); \
+	abssrc=$$(pwd)/$(ADOC_SRC); \
+	for adoc in $(ADOC_STANDALONE); do \
+	  echo "  [doc]    $$adoc"; \
+	  if [ -n "$(_ADOC_CONTAINER)" ]; then \
+	    $(RUNTIME) run --rm \
+	      -v "$$abssrc:/documents:z" \
+	      asciidoctor/docker-asciidoctor asciidoctor \
+	      $(ADOC_ATTRS) \
+	      -a imagesdir=/documents/images \
+	      -D /documents/$(ADOC_DEST) \
+	      "$$adoc"; \
+	  else \
+	    $(_ASCIIDOCTOR) \
+	      $(ADOC_ATTRS) \
+	      -a imagesdir="$$abssrc/images" \
+	      -D "$$absout" \
+	      "$$abssrc/$$adoc"; \
+	  fi; \
+	done
+	@echo ""
+	@echo "  HTML files written to $(ADOC_DEST)/"
+	@echo ""
+
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
-clean: ## Remove all exported files
+clean: ## Remove all exported files (SVG, PNG, PlantUML, HTML, …)
 	rm -rf exported/
 	@echo "exported/ directory removed."
 
