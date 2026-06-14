@@ -21,7 +21,7 @@ A key security boundary runs through this diagram: **user identity is used only 
 
 === Web Application
 
-The Web Application is a Go monolith that serves all HTTP traffic. It is server-side rendered using the standard `html/template` package — there is no separate frontend bundle or SPA framework. A single process handles session management, OIDC authentication, catalogue browsing, request submission, approval actions, and status display.
+The Web Application is a monolith that serves all HTTP traffic. It is server-side rendered using the standard `html/template` package — there is no separate frontend bundle or SPA framework. A single process handles session management, OIDC authentication, catalogue browsing, request submission, approval actions, and status display.
 
 At startup the Web App launches a **informer** for both `ResourceRequest` and `ProvisionedResource` objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.
 
