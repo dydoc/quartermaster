@@ -24,7 +24,7 @@ The Web Application is a single process. All components described here are packa
 
 === Components
 
-**HTTP Handler** routes all incoming requests to the appropriate page handler and enforces session authentication on every request before dispatching. It is the only component that touches the raw `net/http` layer.
+**HTTP Handler** routes all incoming requests to the appropriate page handler and enforces session authentication on every request before dispatching. It is the only component that touches the raw `http` layer.
 
 **OIDC Session Manager** handles the OIDC authorization code flow with the Identity Provider. It issues and validates session cookies and extracts the user's identity (username, groups) from the ID token, making it available to all downstream handlers for the duration of the request.
 

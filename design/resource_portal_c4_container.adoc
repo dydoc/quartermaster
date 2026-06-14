@@ -11,7 +11,7 @@ image::C4Container_ResourcePortal.svg[title="C4 Container diagram for the Resour
 
 == Overview
 
-The Resource Portal is deployed as a set of Kubernetes workloads on the Rancher management cluster. At this level the system decomposes into two runtime processes — the **Web Application** and the **Approval Controller** — and three **Custom Resource Definitions** that live on the management cluster and act as the shared, durable data layer between them.
+The Resource Portal is deployed as a set of Kubernetes workloads on a Rancher managed cluster. At this level the system decomposes into two runtime processes — the **Web Application** and the **Approval Controller** — and three **Custom Resource Definitions** that live on the management cluster (the cluster where the Resource Portal runs) and act as the shared, durable data layer between them.
 
 The boundary is the management cluster itself. There are no databases, message queues, or external storage services: Kubernetes etcd (via the CRD API) is the single source of truth for all portal state.
 
@@ -21,7 +21,7 @@ A key security boundary runs through this diagram: **user identity is used only 
 
 === Web Application
 
-The Web Application is a monolith that serves all HTTP traffic. It is server-side rendered using the standard `html/template` package — there is no separate frontend bundle or SPA framework. A single process handles session management, OIDC authentication, catalogue browsing, request submission, approval actions, and status display.
+The Web Application is a monolith that serves all HTTP traffic. It is server-side rendered — there is no separate frontend bundle or SPA framework. A single process handles session management, OIDC authentication, catalogue browsing, request submission, approval actions, and status display.
 
 At startup the Web App launches a **informer** for both `ResourceRequest` and `ProvisionedResource` objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.
 
@@ -49,16 +49,7 @@ The mechanism that prevents this is **not** something the Approval Controller do
 
 **Active drift reconciliation.** The CRD target controller does not treat the initial apply as a one-time operation. On every reconcile loop — triggered by watch events or periodic resync on the target cluster — it re-applies the full desired state of all derived objects via SSA. If a user has forced a field override, the next reconcile restores the correct state. The reconcile window is the only gap in protection; under normal conditions it is measured in seconds.
 
-**CEL immutability on the CRD target spec.** The fields of the CRD target itself that determine the configuration of derived objects are marked immutable after creation using `x-kubernetes-validations` CEL rules:
 
-[source,yaml]
-----
-x-kubernetes-validations:
-  - rule: "self.image == oldSelf.image"
-    message: "field is immutable after creation"
-----
-
-This prevents any actor from modifying the declared desired state of a provisioned resource without going through a new `ResourceRequest`. Even if someone obtained write access to the CRD target directly, the API server would reject the modification.
 
 **The accepted trade-off.** This strategy accepts a reconcile window during which a forced modification to a derived object is live before being corrected by the CRD target controller. The strategy does not cover `DELETE` of derived objects synchronously — if a user deletes a Pod it will be recreated on the next reconcile pass of the CRD target controller, but it is absent during that window.
 
@@ -69,7 +60,6 @@ Because the integrity guarantees depend on how each CRD target controller is imp
 * all derived objects must be created and updated via SSA, never with imperative `Create` followed by silent drift
 * field ownership must be declared on every configuration-significant field, not just top-level spec fields
 * the reconcile loop must compare observed vs desired state on all owned fields, not only check object existence
-* CEL immutability rules must be defined on all CRD target spec fields that influence derived object configuration
 * CRD target instance names on downstream clusters must be derived from the UID of the originating `create` `ResourceRequest` (not from user-provided names), and must be kept under 63 characters after any prefix — Kubernetes name length limits apply and many admission webhooks impose stricter bounds
 
 === ResourceRequest CRD
@@ -102,7 +92,7 @@ NOTE: `rolling_back` is an `update`-only intermediate phase, visible to the End 
 +
 NOTE: `rollback_failed` is a terminal phase reached when rollback retries are also exhausted. The cluster state is unknown — the CRD target instance may be in a partially updated state. Manual intervention is required. The Health Observer will detect and surface `degraded` or `unknown` status on `ProvisionedResource` on the next reconcile pass.
 
-**CEL immutability.** The following `spec` fields are marked immutable after creation via `x-kubernetes-validations` rules: `action`, `targetRef`, `resourceType`, `approvers`, `approvalPolicy`, `requester`. This prevents any actor from retroactively modifying the governance perimeter of an in-flight request.
+
 
 === ProvisionedResource CRD
 
