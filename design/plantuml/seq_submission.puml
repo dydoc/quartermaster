@@ -113,7 +113,7 @@ RES  --> SUB  : concrete approver list
 
 == Write ResourceRequest ==
 
-SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\napprovalPolicy snapshot, approvers list)
+SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\napprovalPolicy snapshot, approvers list,\nrequester identity)
 
 group Failure path — API server error
     RRCRD --> SUB : error (conflict / server error)

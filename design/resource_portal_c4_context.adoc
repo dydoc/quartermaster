@@ -31,13 +31,17 @@ The **Platform Admin** configures the portal: which resource types are available
 
 The Identity Provider (Keycloak, LDAP, or any OIDC-compatible SSO) is the single source of user identity for the Web Application and for Rancher's authn layer. Both authenticate against the same IdP, so the user's identity token is consistent from login through to all management-cluster operations performed via Rancher. The Approval Controller, however, acts under its own Kubernetes service account when writing to target clusters — that leg of the flow does not carry user identity, by design.
 
+=== Mail Relay
+
+An SMTP relay used by the portal to deliver state-change notifications to requesters and approvers. It is shown at this level because it is an external dependency of the system, even though the interaction is one-way and fire-and-forget. Internal details — which container sends notifications and under what conditions — are covered in the Container diagram.
+
 === Platform Infrastructure
 
 Platform Infrastructure represents Rancher and the Rancher-managed downstream Kubernetes clusters, collapsed into a single boundary at this level of the diagram. The two are shown together because, from the portal's perspective, they form a single logical target: the portal sends operations, and Rancher handles authentication, RBAC enforcement, and routing to the correct cluster transparently.
 
 Rancher's role is that of an authn/RBAC proxy — it validates the user's token against the Identity Provider, checks whether the user has the required permissions on the target cluster, and forwards the request to the cluster API server if authorised. It does not act autonomously on clusters; it only acts on behalf of an authenticated user request originating from the portal.
 
-On the cluster side, each resource type exposed by the portal is backed by a Custom Resource Definition (CRD) and a dedicated controller. When a request is approved, the portal applies the corresponding CRD instance to the target cluster via Rancher. The controller then reconciles the declared desired state into actual infrastructure — following the standard Kubernetes operator pattern.
+On the cluster side, each resource type exposed by the portal is backed by a Custom Resource Definition (CRD) and a dedicated operator — the **CRD target controller** — that runs on the target cluster. When a request is approved, the portal writes a CR of that type — the **CRD target instance** — to the target cluster via Rancher. The CRD target controller then watches those instances and reconciles the declared desired state into actual infrastructure, following the standard Kubernetes operator pattern. The distinction matters: the portal interacts only with the CRD target instance (the object); the CRD target controller (the process) is entirely outside the portal's scope and is authored by the team onboarding a new resource type.
 
 == Key Design Decisions
 

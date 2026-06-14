@@ -100,11 +100,18 @@ group Failure path
 
     note over PH : retries exhausted\nwith exponential backoff
 
+    PH  -> RRCRD : patch phase = rolling_back
+
+    note over RRCRD : status.phase = rolling_back\nvisible to End User in the portal
+
     PH  -> RBH  : rollback(previousParameters)
     RBH -> CTI  : SSA apply CRD target instance\n[previousParameters, controller SA]
     activate CTI
     CTI -> CTC  : reconcile triggered
+    activate CTC
     CTC --> CTI : phase = Ready\n(pre-update state restored)
+    deactivate CTC
+    CTI --> RBH  : Ready observed
     deactivate CTI
     RBH --> PH  : rollback confirmed
 

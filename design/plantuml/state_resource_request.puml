@@ -40,30 +40,30 @@ provisioning --> rolling_back : Controller —\nretries exhausted (update only)
 state rolling_back {
     state "re-applying\npreviousParameters" as reapply
     state "watching for\nReady" as rbwatch
+    state "retrying\n(backoff)" as rbretry
     reapply --> rbwatch
+    rbwatch --> rbretry : NotReady / error
+    rbretry --> reapply : retry attempt
 }
+
+note right of rolling_back
+  Visible to End User in the portal.\nstatus.phase = rolling_back.\nProvisionedResource retains\nappliedParameters throughout.
+end note
 
 rolling_back --> failed : Controller —\npre-update state restored;\nphase set to failed
 
 provisioning --> failed : Controller —\nretries exhausted\n(create / delete)
 
 note right of rejected
-  Terminal.
-  ProvisionedResource unchanged (update)\nor not created (create).
+  Terminal.\nProvisionedResource unchanged (update)\nor not created (create).
 end note
 
 note right of provisioned
-  Terminal.
-  ProvisionedResource written or\nfinalizer removed (delete).
-  Email notification sent.
+  Terminal.\nProvisionedResource written or\nfinalizer removed (delete).\nEmail notification sent.
 end note
 
 note right of failed
-  Terminal — failureReason written.
-  create: ProvisionedResource not created.
-  update: ProvisionedResource unchanged\n(previousParameters still operational).
-  delete: CRD target instance may still exist.
-  Email notification sent.
+  Terminal — failureReason written.\ncreate: ProvisionedResource not created.\nupdate: ProvisionedResource unchanged\n(previousParameters still operational).\ndelete: CRD target instance may still exist.\nEmail notification sent.
 end note
 
 provisioned  --> [*]
