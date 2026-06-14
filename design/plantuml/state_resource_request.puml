@@ -47,7 +47,10 @@ state rolling_back {
 }
 
 note right of rolling_back
-  Visible to End User in the portal.\nstatus.phase = rolling_back.\nProvisionedResource retains\nappliedParameters throughout.
+  Visible to End User in the portal.
+  status.phase = rolling_back.
+  ProvisionedResource retains
+  appliedParameters throughout.
 end note
 
 rolling_back --> failed        : Controller —\npre-update state restored;\nphase set to failed
@@ -57,19 +60,35 @@ rolling_back --> rollback_failed : Controller —\nrollback retries exhausted;\n
 provisioning --> failed : Controller —\nretries exhausted\n(create / delete)
 
 note right of rejected
-  Terminal.\nProvisionedResource unchanged (update)\nor not created (create).
+  Terminal.
+  ProvisionedResource unchanged (update)
+  or not created (create).
 end note
 
 note right of provisioned
-  Terminal.\nProvisionedResource written or\nfinalizer removed (delete).\nEmail notification sent.
+  Terminal.
+  ProvisionedResource written or
+  finalizer removed (delete).
+  Email notification sent.
 end note
 
 note right of failed
-  Terminal — failureReason written.\ncreate: ProvisionedResource not created.\nupdate: ProvisionedResource unchanged\n(previousParameters still operational).\ndelete: CRD target instance may still exist.\nEmail notification sent.
+  Terminal — failureReason written.
+  create: ProvisionedResource not created.
+  update: ProvisionedResource unchanged
+  (previousParameters still operational).
+  delete: CRD target instance may still exist.
+  Email notification sent.
 end note
 
 note right of rollback_failed
-  Terminal — failureReason written.\nCluster state unknown: CRD target\ninstance may be in a partially\nupdated state. Manual intervention\nrequired. Health Observer will detect\nand surface degraded status.\nEmail notification sent.
+  Terminal — failureReason written.
+  Cluster state unknown: CRD target
+  instance may be in a partially
+  updated state. Manual intervention
+  required. Health Observer will detect
+  and surface degraded status.
+  Email notification sent.
 end note
 
 provisioned      --> [*]
