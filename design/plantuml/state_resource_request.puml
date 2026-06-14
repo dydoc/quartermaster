@@ -50,7 +50,9 @@ note right of rolling_back
   Visible to End User in the portal.\nstatus.phase = rolling_back.\nProvisionedResource retains\nappliedParameters throughout.
 end note
 
-rolling_back --> failed : Controller —\npre-update state restored;\nphase set to failed
+rolling_back --> failed        : Controller —\npre-update state restored;\nphase set to failed
+
+rolling_back --> rollback_failed : Controller —\nrollback retries exhausted;\ncluster state unknown
 
 provisioning --> failed : Controller —\nretries exhausted\n(create / delete)
 
@@ -66,8 +68,13 @@ note right of failed
   Terminal — failureReason written.\ncreate: ProvisionedResource not created.\nupdate: ProvisionedResource unchanged\n(previousParameters still operational).\ndelete: CRD target instance may still exist.\nEmail notification sent.
 end note
 
-provisioned  --> [*]
-rejected     --> [*]
-failed       --> [*]
+note right of rollback_failed
+  Terminal — failureReason written.\nCluster state unknown: CRD target\ninstance may be in a partially\nupdated state. Manual intervention\nrequired. Health Observer will detect\nand surface degraded status.\nEmail notification sent.
+end note
+
+provisioned      --> [*]
+rejected         --> [*]
+failed           --> [*]
+rollback_failed  --> [*]
 
 @enduml

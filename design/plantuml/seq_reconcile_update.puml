@@ -87,7 +87,7 @@ end
 
 == Failure path — update with rollback ==
 
-group Failure path
+group Failure path — rollback succeeds
     SM  -> PH   : update(parameters)
     PH  -> CTI  : SSA apply [new parameters]
     activate CTI
@@ -98,7 +98,7 @@ group Failure path
     CTI --> PH  : NotReady after retries
     deactivate CTI
 
-    note over PH : retries exhausted\nwith exponential backoff
+    note over PH : provisioning retries exhausted\nwith exponential backoff
 
     PH  -> RRCRD : patch phase = rolling_back
 
@@ -111,7 +111,7 @@ group Failure path
     activate CTC
     CTC --> CTI : phase = Ready\n(pre-update state restored)
     deactivate CTC
-    CTI --> RBH  : Ready observed
+    CTI --> RBH : Ready observed
     deactivate CTI
     RBH --> PH  : rollback confirmed
 
@@ -121,6 +121,28 @@ group Failure path
 
     REC -> NOT  : notify(failed)
     NOT -> MAIL : SMTP → requester
+end
+
+group Failure path — rollback also fails
+    RBH -> CTI  : SSA apply [previousParameters]
+    activate CTI
+    CTI -> CTC  : reconcile triggered — fails
+    activate CTC
+    CTC --> CTI : phase = NotReady
+    deactivate CTC
+    CTI --> RBH : NotReady after retries
+    deactivate CTI
+
+    note over RBH : rollback retries exhausted\ncluster state unknown
+
+    RBH --> PH  : rollback failed
+
+    note over PRCRD : ProvisionedResource unchanged —\nHealth Observer will detect\ndegraded status on next pass
+
+    PH  -> RRCRD : patch phase = rollback_failed\nfailureReason = <cause>
+
+    REC -> NOT  : notify(rollback_failed)
+    NOT -> MAIL : SMTP → requester\n[manual intervention required]
 end
 
 [<-- REC : ctrl.Result{}

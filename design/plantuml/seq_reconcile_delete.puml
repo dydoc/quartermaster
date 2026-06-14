@@ -1,0 +1,111 @@
+@startuml reconcile_delete
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    LifeLineBorderColor #AAAAAA
+    ParticipantBorderColor #534AB7
+    ParticipantBackgroundColor #EEEDFE
+    ParticipantFontColor #3C3489
+    BoxBorderColor #B07D00
+    BoxBackgroundColor #FFF9E6
+    NoteBackgroundColor #F5F5FF
+    NoteBorderColor #9B94E0
+}
+skinparam roundcorner 6
+
+title ResourceRequest Reconcile — delete
+
+box "Management Cluster" #FFF9E6
+    participant "ResourceRequest\nReconciler" as REC
+    participant "Concurrency\nGuard" as CG
+    participant "Provisioning\nState Machine" as SM
+    participant "Provisioning\nHandler" as PH
+    participant "ProvisionedResource\nWriter" as PRW
+    participant "Notifier" as NOT
+    participant "ResourceRequest\nCRD" as RRCRD #E8F4FD
+    participant "ProvisionedResource\nCRD" as PRCRD #E8F4FD
+end box
+
+box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
+    participant "CRD Target\nInstance" as CTI
+end box
+
+participant "Mail Relay" as MAIL #F1EFE8
+
+== Guard ==
+
+[-> REC  : reconcile [action: delete, phase: pending]
+REC -> CG : check concurrent requests\nfor same ProvisionedResource UID
+
+group Failure path — concurrent request active
+    CG  -> RRCRD : list by label target-provisioned-resource = <UID>
+    RRCRD --> CG : non-terminal ResourceRequest found
+    CG  --> REC  : conflict
+    REC --> REC  : requeue with backoff
+end
+
+CG  --> REC  : no conflict
+
+== Approval ==
+
+REC -> SM  : evaluate(decisions, approvers)
+
+group Failure path — rejected
+    SM  -> RRCRD : patch phase = rejected
+    note over PRCRD : ProvisionedResource unchanged
+end
+
+SM  -> RRCRD  : patch phase = approved → provisioning
+SM  -> PRCRD  : patch status.phase = deleting
+
+== Happy path — delete ==
+
+group Happy path
+    SM  -> PH  : deprovision(targetRef)
+
+    PH  -> CTI : check existence\n[controller SA]
+
+    alt CRD target instance exists
+        CTI --> PH : found
+        PH  -> CTI : delete CRD target instance
+        CTI --> PH : accepted
+    else CRD target instance already absent
+        CTI --> PH : NotFound
+        note over PH : idempotent — treat as\nsuccessful deletion;\nproceed to finalizer removal
+    end
+
+    PH  -> CTI : watch until absent\n(or NotFound on first check)
+    CTI --> PH : absent confirmed
+
+    PH  -> PRW : deletion confirmed
+    PRW -> PRCRD : remove finalizer portal.example.com/deprovisioning\n→ GC deletes ProvisionedResource
+
+    PRW -> RRCRD : patch phase = provisioned\n(delete action completed successfully)
+
+    REC -> NOT : notify(provisioned)
+    NOT -> MAIL : SMTP → requester
+end
+
+group Failure path — deletion error
+    PH  -> CTI  : delete CRD target instance — error\n(cluster unreachable / RBAC)
+    CTI --> PH  : error
+
+    note over PH : requeue with\nexponential backoff
+
+    PH  -> CTI  : delete — retries exhausted
+    CTI --> PH  : error
+
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+
+    note over PRCRD : ProvisionedResource retained —\nfinalizer not removed;\nCRD target instance may still exist
+
+    REC -> NOT  : notify(failed)
+    NOT -> MAIL : SMTP → requester
+end
+
+[<-- REC : ctrl.Result{}
+
+@enduml

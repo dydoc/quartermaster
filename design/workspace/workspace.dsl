@@ -37,12 +37,12 @@ workspace "Resource Portal" "C4 diagrams — Resource Portal v9. Self-service po
                 technology "HTTPS"
             }
 
-            approvalController = container "Approval Controller" "Kubernetes controller (controller-runtime). Drives the ResourceRequest state machine; applies CRD target instances on downstream clusters under its own service account via SSA. The Health Observer monitors CRD target instance health and restores out-of-band deletions. Derived object drift is corrected by the CRD target controller." {
+            approvalController = container "Approval Controller" "Kubernetes controller (controller-runtime). Drives the ResourceRequest state machine; applies CRD target instances on downstream clusters under its own service account via SSA. Polling-free: exits with RequeueAfter rather than blocking watch loops. The Health Observer monitors CRD target instance health and restores out-of-band deletions (audit-trail trade-off: see documentation). Derived object drift is corrected by the CRD target controller." {
                 tags "Container Controller"
                 technology "Go, controller-runtime"
             }
 
-            resourceRequestCRD = container "ResourceRequest CRD" "Full lifecycle of a resource request: pending → approved/rejected → provisioning → provisioned/failed. Carries embedded approval policy, pre-resolved approver list, and previousParameters for update rollback. Critical spec fields are immutable via CEL rules." {
+            resourceRequestCRD = container "ResourceRequest CRD" "Full lifecycle of a resource request: pending → approved/rejected → provisioning → provisioned/rolling_back → failed/rollback_failed. rolling_back is update-only and visible to End Users. Carries embedded approval policy, pre-resolved approver list, and previousParameters for update rollback. Critical spec fields are immutable via CEL rules." {
                 tags "Container CRD"
                 technology "Kubernetes CRD (cluster: management)"
             }
@@ -90,7 +90,7 @@ workspace "Resource Portal" "C4 diagrams — Resource Portal v9. Self-service po
         approvalController -> resourceRequestCRD     "Watches events; drives phase transitions"
         approvalController -> provisionedResourceCRD "Creates/updates on confirmed provisioning; manages deprovisioning finalizer"
         approvalController -> platformInfra          "Applies/deletes CRD target instances via SSA; Health Observer reads instance status read-only"
-        approvalController -> mailRelay              "Sends notification on provisioned / failed"
+        approvalController -> mailRelay              "Sends notification on provisioned / failed / rollback_failed; at-most-once via status.notificationSent"
     }
 
     views {

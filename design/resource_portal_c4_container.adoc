@@ -37,6 +37,8 @@ The controller's **only write to a target cluster** is creating, updating, or de
 
 In addition to driving provisioning, the controller runs a **Health Observer** on every reconcile pass for all `ProvisionedResource` objects in `provisioned` or `updating` phase. The Health Observer reads the `status.conditions` of the CRD target instance on the downstream cluster (read-only via Rancher) and updates `ProvisionedResource.status.phase` to `degraded` or `unknown` if the instance has become unhealthy or has disappeared. If the CRD target instance was deleted out-of-band — not through a portal `delete` request — the Health Observer re-applies it via SSA to restore it. This is the only form of drift correction the Approval Controller performs, and it operates at the CRD target instance level only, never on derived objects.
 
+NOTE: The Health Observer re-applies a deleted CRD target instance directly, without creating a `ResourceRequest`. This is a deliberate trade-off: the recovery is fast and automatic, but it bypasses the approval workflow and produces no audit trail entry beyond the controller's own logs. Operators who require an approval trail for all cluster writes — including automated recovery — should disable the re-apply behaviour and instead alert on `ProvisionedResource.status.phase = unknown`, treating out-of-band deletion as a manual incident.
+
 === Integrity of derived objects: SSA with field ownership and drift reconciliation
 
 Applying the CRD target instance is only the first step. The CRD target controller on the downstream cluster will in turn create derived objects — Pods, Services, ConfigMaps, PVCs, or any other Kubernetes resource the resource type requires. An end user with standard namespace permissions could modify those derived objects directly, bypassing the portal's governance entirely.
@@ -68,6 +70,7 @@ Because the integrity guarantees depend on how each CRD target controller is imp
 * field ownership must be declared on every configuration-significant field, not just top-level spec fields
 * the reconcile loop must compare observed vs desired state on all owned fields, not only check object existence
 * CEL immutability rules must be defined on all CRD target spec fields that influence derived object configuration
+* CRD target instance names on downstream clusters must be derived from the UID of the originating `create` `ResourceRequest` (not from user-provided names), and must be kept under 63 characters after any prefix — Kubernetes name length limits apply and many admission webhooks impose stricter bounds
 
 === ResourceRequest CRD
 
@@ -75,7 +78,7 @@ Because the integrity guarantees depend on how each CRD target controller is imp
 
 The `action` field distinguishes three semantics: `create` (first provisioning), `update` (modification of an already-provisioned resource), and `delete` (deprovisioning). For `update` and `delete`, the `targetRef` field identifies the `ProvisionedResource` being acted upon, carrying both name and UID — the UID prevents the controller from acting on a different object that happens to share the same name.
 
-For `update` actions, the Web App snapshots the current `appliedParameters` from the `ProvisionedResource` into a `previousParameters` field at submission time. This lets the approver see exactly what is changing and gives the controller a deterministic rollback target if the update fails.
+For `update` actions, the Web App snapshots the current `appliedParameters` from the `ProvisionedResource` into a `previousParameters` field at submission time. This lets the approver see exactly what is changing and gives the controller a deterministic rollback target if the update fails. The snapshot also includes the `resourceVersion` of the `ProvisionedResource` at the time of the snapshot — the controller validates this at reconcile time to detect whether another update completed between submission and approval, making the rollback target stale.
 
 Fields carried by a `ResourceRequest`:
 
@@ -84,16 +87,22 @@ Fields carried by a `ResourceRequest`:
 * `spec.resourceType` — references a `ResourceCatalogue` entry
 * `spec.parameters` — the desired configuration
 * `spec.previousParameters` — snapshot of current configuration at submission time (update only)
+* `spec.previousResourceVersion` — `resourceVersion` of the `ProvisionedResource` at snapshot time; used by the controller to detect stale rollback targets (update only)
 * `spec.approvalPolicy` — snapshot of the policy from `ResourceCatalogue` at submission time
-* `spec.approvers` — pre-resolved list of required approver identities
-* `spec.requester` — identity of the user who submitted the request, extracted from the OIDC token at submission time; used by the Notifier to address state-change emails
-* `status.phase` — `pending` → `approved` / `rejected` → `provisioning` → `provisioned` / `rolling_back` → `failed`
+* `spec.approvers` — pre-resolved list of required approver identities; immutable after creation via CEL validation rule
+* `spec.requester` — identity of the user who submitted the request, extracted from the OIDC token at submission time; used by the Notifier to address state-change emails; immutable after creation
+* `status.phase` — `pending` → `approved` / `rejected` → `provisioning` → `provisioned` / `rolling_back` → `failed` / `rollback_failed`
+* `status.notificationSent` — boolean set by the Notifier after a notification is successfully delivered; prevents duplicate notifications on controller restart
+* `status.decisions` — one entry per approver action, with identity and timestamp
+* `status.failureReason` — populated on `failed` and `rollback_failed`
 +
 NOTE: `provisioned` is the terminal success phase for all three action types. For `create` and `update` it means the resource is operational on the target cluster. For `delete` it means the deprovisioning action completed successfully — the resource no longer exists. The same phase name is used deliberately: it signals that the _request_ reached its intended terminal state, regardless of what that state implies for the resource's existence.
 +
-NOTE: `rolling_back` is an `update`-only intermediate phase, set when provisioning retries are exhausted and the controller is re-applying `previousParameters` to restore the CRD target instance to its pre-update state. It is a real `status.phase` value, visible to the End User in the portal. `ProvisionedResource` retains `appliedParameters` throughout — it is never updated optimistically. Once the rollback apply is confirmed, the controller advances to `failed`.
-* `status.decisions` — one entry per approver action, with identity and timestamp
-* `status.failureReason` — populated on `failed`
+NOTE: `rolling_back` is an `update`-only intermediate phase, visible to the End User in the portal. The controller is re-applying `previousParameters` to restore the CRD target instance. `ProvisionedResource` retains `appliedParameters` throughout.
++
+NOTE: `rollback_failed` is a terminal phase reached when rollback retries are also exhausted. The cluster state is unknown — the CRD target instance may be in a partially updated state. Manual intervention is required. The Health Observer will detect and surface `degraded` or `unknown` status on `ProvisionedResource` on the next reconcile pass.
+
+**CEL immutability.** The following `spec` fields are marked immutable after creation via `x-kubernetes-validations` rules: `action`, `targetRef`, `resourceType`, `approvers`, `approvalPolicy`, `requester`. This prevents any actor from retroactively modifying the governance perimeter of an in-flight request.
 
 === ProvisionedResource CRD
 
@@ -101,7 +110,7 @@ NOTE: `rolling_back` is an `update`-only intermediate phase, set when provisioni
 
 The controller updates `ProvisionedResource` only after observing that the CRD target instance on the downstream cluster has reached a `Ready` state — not optimistically at the moment of apply. This means `ProvisionedResource` always reflects the last confirmed operational state. During an in-flight update the object retains the previous `appliedParameters` until the new ones are confirmed; if the update fails the controller uses those parameters as the rollback target.
 
-The `ProvisionedResource` carries a finalizer (`portal.example.com/deprovisioning`) added by the controller at creation time. The finalizer is removed only after the controller has confirmed that the CRD target instance on the downstream cluster has been successfully deleted.
+The `ProvisionedResource` carries a finalizer (`portal.example.com/deprovisioning`) added by the controller at creation time. The finalizer is removed only after the controller has confirmed that the CRD target instance on the downstream cluster has been successfully deleted. The Provisioning Handler checks for `NotFound` before entering the watch loop — if the instance is already absent (e.g. after a crash-restart), the handler treats this as a confirmed deletion and proceeds directly to finalizer removal, making the delete path fully idempotent.
 
 Fields carried by `ProvisionedResource`:
 
@@ -109,7 +118,7 @@ Fields carried by `ProvisionedResource`:
 * `spec.targetCluster` — the downstream cluster where the resource lives
 * `spec.targetRef` — GVR + namespace + name of the CRD target instance
 * `spec.appliedParameters` — the parameters currently confirmed operational
-* `status.phase` — `provisioned` | `updating` | `degraded` | `deleting`
+* `status.phase` — `provisioned` | `updating` | `degraded` | `unknown` | `deleting`
 * `metadata.labels`:
 ** `portal.example.com/resource-type` — for filtering by type in the informer cache
 ** `portal.example.com/created-by-request` — UID of the originating `create` ResourceRequest
@@ -147,11 +156,12 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 1. **End User** selects an existing provisioned resource and submits a modification.
 2. Web App checks that no other `ResourceRequest` is in a non-terminal phase for the same `ProvisionedResource`. If one exists, submission is rejected with an explicit message.
-3. Web App snapshots `appliedParameters` into `previousParameters`, creates a `ResourceRequest` (`action: update`, `targetRef` with UID).
+3. Web App snapshots `appliedParameters` and `resourceVersion` into `previousParameters` and `previousResourceVersion`, creates a `ResourceRequest` (`action: update`, `targetRef` with UID).
 4. **Approver** sees a diff view (new parameters vs `previousParameters`), approves it.
-5. Controller advances to `provisioning`, applies the updated CRD target instance via SSA.
-6. Controller watches for `Ready` confirmation. On success, updates `ProvisionedResource` with new `appliedParameters`, sends notification.
-7. **End User** sees updated state from informer cache.
+5. Controller validates `previousResourceVersion` against the current `ProvisionedResource.resourceVersion`. If they differ, another update completed between submission and approval — the controller sets phase to `failed` with `failureReason = stale rollback target` rather than proceeding with a potentially incorrect rollback target.
+6. Controller advances to `provisioning`, applies the updated CRD target instance via SSA.
+7. Controller watches for `Ready` confirmation. On success, updates `ProvisionedResource` with new `appliedParameters`, sends notification.
+8. **End User** sees updated state from informer cache.
 
 === Failure Path — update with rollback
 
@@ -162,14 +172,23 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 5. Once the rollback apply is confirmed `Ready` on the target cluster, controller sets `ResourceRequest` phase to `failed` with `failureReason`, sends notification email.
 6. Web App shows `failed` on the update request; `ProvisionedResource` still shows `provisioned` with the previous parameters — no inconsistent state visible to the user.
 
+=== Failure Path — rollback also fails
+
+1. Rollback retries are exhausted: the CRD target instance cannot be restored to `Ready`.
+2. Controller sets `ResourceRequest` phase to `rollback_failed` with `failureReason`.
+3. `ProvisionedResource` is not modified — it retains the last confirmed `appliedParameters`.
+4. On the next reconcile pass, the Health Observer reads the CRD target instance `status.conditions` and sets `ProvisionedResource.status.phase` to `degraded` or `unknown`, making the situation visible in the portal.
+5. Manual intervention is required to restore the cluster to a consistent state.
+
 === Deprovisioning
 
 1. **End User** requests deletion of a provisioned resource.
 2. Web App creates a `ResourceRequest` (`action: delete`, `targetRef` with UID).
 3. After approval, controller advances to `provisioning`, sets `ProvisionedResource` phase to `deleting`.
-4. Controller deletes the CRD target instance on the downstream cluster via Rancher.
-5. Controller watches for the CRD target instance to disappear. On confirmation, removes the finalizer from `ProvisionedResource` — the GC deletes it.
-6. Controller advances `ResourceRequest` phase to `provisioned` (the delete action completed successfully), sends notification.
+4. Controller checks whether the CRD target instance exists on the downstream cluster. If it is already absent (e.g. deleted out-of-band, or the controller crashed after a previous deletion), it proceeds directly to finalizer removal — the delete path is fully idempotent.
+5. If present, controller deletes the CRD target instance via Rancher and watches for it to disappear.
+6. On confirmed absence, controller removes the finalizer from `ProvisionedResource` — the GC deletes it.
+7. Controller advances `ResourceRequest` phase to `provisioned` (the delete action completed successfully), sends notification.
 
 == Key Design Decisions
 
@@ -178,6 +197,16 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 **SSA field ownership + drift reconciliation over admission webhook.** The integrity of derived objects on target clusters is enforced through the CRD target controller using Server-Side Apply with explicit field ownership combined with active drift reconciliation on every resync — not by the Approval Controller and not by a ValidatingAdmissionWebhook. The Approval Controller's scope ends at the CRD target instance; everything below that is the CRD target controller's responsibility, enforced by the onboarding contract. The trade-offs accepted: the reconcile window (seconds) is the gap in protection, and synchronous DELETE coverage is not provided. In exchange, there is no additional webhook component to operate on each target cluster, no Fail Open/Fail Closed availability dilemma, and no bootstrap ordering dependency.
 
 **CRD target onboarding contract.** Because the integrity guarantees depend on correct implementation of SSA and drift reconciliation in each CRD target controller, the portal defines an explicit onboarding contract. This contract is the boundary between what the portal can guarantee and what it delegates to the CRD target author.
+
+**`rollback_failed` as a distinct terminal phase.** When rollback retries are exhausted the cluster state is genuinely unknown — the CRD target instance may be partially updated. Using `failed` for both "rollback confirmed" and "rollback failed" would hide this distinction from the operator. `rollback_failed` is a signal that manual intervention is required, not merely a retry.
+
+**CEL immutability on governance fields.** `spec.approvers`, `spec.approvalPolicy`, `spec.requester`, `spec.action`, and `spec.targetRef` on `ResourceRequest` are immutable after creation. This prevents any actor — including the Web App itself — from retroactively modifying the governance perimeter of an in-flight request.
+
+**`status.notificationSent` prevents duplicate notifications.** The Notifier sets this boolean after successful delivery. On controller restart, the Reconciler checks this field before invoking the Notifier, ensuring at-most-once delivery without external state. A notification that was in-flight at restart time may be lost (fire-and-forget semantics are preserved), but a completed transition is never re-notified.
+
+**`previousResourceVersion` guards against stale rollback targets.** The Web App snapshots the `ProvisionedResource.resourceVersion` at submission time. If another update completes and is confirmed between submission and approval, the controller detects the mismatch and fails the request rather than proceeding with a rollback target that no longer reflects the actual pre-update state.
+
+**Deprovisioning is idempotent on `NotFound`.** The Provisioning Handler checks for `NotFound` before entering the delete watch loop. This makes the delete path safe to re-run after a crash-restart without special-casing the controller logic.
 
 **Monolith, not microservices.** The Web Application is intentionally a single deployable binary. The operational surface is kept small: one Deployment, one Service, no inter-service networking inside the portal boundary. The separation of concerns is internal (packages, not processes).
 
@@ -189,4 +218,4 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 **Three CRDs, all on the management cluster.** There is no portal-specific database. The management cluster's etcd is the authoritative store for all portal state. `ResourceRequest` and `ProvisionedResource` are controller-owned; `ResourceCatalogue` is admin-owned.
 
-**Failure is a first-class state.** `failed` is a terminal phase with a structured `failureReason`. The controller retries with backoff before reaching it. Once in `failed`, the request is immutable — a new request must be submitted. This avoids ambiguous partial-apply states.
+**Failure is a first-class state.** `failed` and `rollback_failed` are terminal phases with a structured `failureReason`. The controller retries with backoff before reaching either. Once in a terminal phase, the request is immutable — a new request must be submitted. This avoids ambiguous partial-apply states.
