@@ -22,3 +22,7 @@ include::resource_portal_c4_container.adoc[leveloffset=+1]
 '''
 
 include::resource_portal_c4_component.adoc[leveloffset=+1]
+
+'''
+
+include::resource_portal_glossary.adoc[leveloffset=+1]

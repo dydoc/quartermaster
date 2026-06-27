@@ -265,6 +265,7 @@ ADOC_MAIN    ?= resource_portal.adoc
 ADOC_STANDALONE ?= resource_portal_c4_context.adoc \
                    resource_portal_c4_container.adoc \
                    resource_portal_c4_component.adoc \
+                   resource_portal_glossary.adoc \
                    makefile.adoc
 
 docs: docs-html ## Render AsciiDoc sources → HTML (alias)

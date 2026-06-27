@@ -16,7 +16,7 @@ skinparam sequence {
 }
 skinparam roundcorner 6
 
-title ResourceRequest Reconcile — update
+title ResourceRequest Reconcile — update\n(guard → apply pass → readiness pass → optional rollback pass)
 
 box "Management Cluster" #FFF9E6
     participant "ResourceRequest\nReconciler" as REC
@@ -32,12 +32,11 @@ end box
 
 box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
     participant "CRD Target\nInstance" as CTI
-    participant "CRD Target\nController" as CTC
 end box
 
 participant "Mail Relay" as MAIL #F1EFE8
 
-== Guard ==
+== Guard & apply pass (reconcile invocation — phase: pending) ==
 
 [-> REC  : reconcile [action: update, phase: pending]
 REC -> CG : check concurrent requests\nfor same ProvisionedResource UID
@@ -46,105 +45,103 @@ group Failure path — concurrent request active
     CG  -> RRCRD : list by label target-provisioned-resource = <UID>
     RRCRD --> CG : non-terminal ResourceRequest found
     CG  --> REC  : conflict
-    REC --> REC  : requeue with backoff
-    note over REC : no state change\nWeb App is primary guard;\nthis is the controller-side check
+    note over REC : no state change;\nWeb App is primary guard — this is the\ncontroller-side serialisation check
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
 end
 
 CG  --> REC  : no conflict
-
-== Approval ==
-
 REC -> SM   : evaluate(decisions, approvers)
 
 group Failure path — rejected
     SM  -> RRCRD : patch phase = rejected
-    note over PRCRD : ProvisionedResource unchanged\nappliedParameters = previousParameters
+    note over PRCRD : ProvisionedResource unchanged;\nappliedParameters still operational
+    REC -> NOT   : notify(rejected)
+    NOT -> MAIL  : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-SM  -> RRCRD : patch phase = approved → provisioning
+SM  -> RRCRD : patch phase: pending → approved → provisioning
+SM  -> PH    : validate stale rollback target
 
-== Happy path — update ==
+group Failure path — stale rollback target
+    note over PH : previousGeneration ≠\ncurrent ProvisionedResource.generation.\nAnother update completed after submission.
+    PH  -> RRCRD : patch phase = failed\nfailureReason = stale rollback target
+    REC -> NOT   : notify(failed)
+    NOT -> MAIL  : SMTP → requester
+    [<-- REC : ctrl.Result{}
+end
 
-group Happy path
-    SM  -> PH   : update(parameters)
-    PH  -> CTI  : SSA apply CRD target instance\n[new parameters, controller SA]
-    activate CTI
-    CTI -> CTC  : reconcile triggered
-    activate CTC
-    CTC -> CTC  : re-apply derived objects\nwith new spec via SSA
-    CTC --> CTI : phase = Ready
-    deactivate CTC
-    CTI --> PH  : Ready observed
-    deactivate CTI
+PH  -> CTI  : SSA apply CRD target instance\n[new parameters, controller SA]
+CTI --> PH  : accepted
+note over PH, CTI : CRD Target Controller begins reconciling\nwith new parameters independently.\nReadiness is checked on re-invocation, not here.
+[<-- REC : ctrl.Result{RequeueAfter: interval}
 
+== Readiness check pass (reconcile re-invocation — phase: provisioning) ==
+note over REC : Repeated on each re-invocation until Ready, failed, or rolling_back.
+
+[-> REC : reconcile [phase: provisioning]
+REC -> PH : check readiness
+PH  -> CTI : get status.conditions\n[controller SA, read-only]
+
+group Retry — NotReady
+    CTI --> PH : Ready = False
+    note over PH : requeue with exponential backoff
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
+end
+
+group Happy path — Ready confirmed
+    CTI --> PH  : Ready = True
     PH  -> PRW  : confirmed success
-    PRW -> PRCRD : patch appliedParameters = new\nupdate last-updated-by-request label
+    PRW -> PRCRD : patch appliedParameters = new parameters\nupdate last-updated-by-request label
     PRW -> RRCRD : patch phase = provisioned
-
     REC -> NOT  : notify(provisioned)
     NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-== Failure path — update with rollback ==
-
-group Failure path — rollback succeeds
-    SM  -> PH   : update(parameters)
-    PH  -> CTI  : SSA apply [new parameters]
-    activate CTI
-    CTI -> CTC  : reconcile triggered — fails
-    activate CTC
-    CTC --> CTI : phase = NotReady
-    deactivate CTC
-    CTI --> PH  : NotReady after retries
-    deactivate CTI
-
-    note over PH : provisioning retries exhausted\nwith exponential backoff
-
+group Retries exhausted — begin rollback
+    CTI --> PH   : Ready = False (max retries reached)
     PH  -> RRCRD : patch phase = rolling_back
-
     note over RRCRD : status.phase = rolling_back\nvisible to End User in the portal
-
-    PH  -> RBH  : rollback(previousParameters)
-    RBH -> CTI  : SSA apply CRD target instance\n[previousParameters, controller SA]
-    activate CTI
-    CTI -> CTC  : reconcile triggered
-    activate CTC
-    CTC --> CTI : phase = Ready\n(pre-update state restored)
-    deactivate CTC
-    CTI --> RBH : Ready observed
-    deactivate CTI
-    RBH --> PH  : rollback confirmed
-
+    PH  -> RBH   : rollback(previousParameters)
     note over PRCRD : ProvisionedResource never modified —\nstill carries last confirmed appliedParameters
+    RBH -> CTI   : SSA apply CRD target instance\n[previousParameters, controller SA]
+    CTI --> RBH  : accepted
+    [<-- REC : ctrl.Result{RequeueAfter: interval}
+end
 
-    PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+== Rollback readiness pass (reconcile re-invocation — phase: rolling_back) ==
+note over REC : Repeated on each re-invocation until rollback is confirmed or exhausted.
 
+[-> REC : reconcile [phase: rolling_back]
+REC -> RBH : check rollback readiness
+RBH -> CTI : get status.conditions\n[controller SA, read-only]
+
+group Retry — rollback NotReady
+    CTI --> RBH : Ready = False
+    note over RBH : requeue with exponential backoff
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
+end
+
+group Rollback confirmed — pre-update state restored
+    CTI --> RBH : Ready = True
+    note over PRCRD : ProvisionedResource unchanged throughout —\npreviousParameters were still operational
+    RBH --> PH  : rollback confirmed
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <forward update cause>
     REC -> NOT  : notify(failed)
     NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-group Failure path — rollback also fails
-    RBH -> CTI  : SSA apply [previousParameters]
-    activate CTI
-    CTI -> CTC  : reconcile triggered — fails
-    activate CTC
-    CTC --> CTI : phase = NotReady
-    deactivate CTC
-    CTI --> RBH : NotReady after retries
-    deactivate CTI
-
-    note over RBH : rollback retries exhausted\ncluster state unknown
-
+group Rollback retries exhausted — cluster state unknown
+    CTI --> RBH : Ready = False (max rollback retries)
+    note over RBH : cluster state unknown;\nCRD target instance may be\npartially updated
+    note over PRCRD : ProvisionedResource unchanged;\nHealth Observer will detect\ndegraded status on next pass
     RBH --> PH  : rollback failed
-
-    note over PRCRD : ProvisionedResource unchanged —\nHealth Observer will detect\ndegraded status on next pass
-
     PH  -> RRCRD : patch phase = rollback_failed\nfailureReason = <cause>
-
     REC -> NOT  : notify(rollback_failed)
     NOT -> MAIL : SMTP → requester\n[manual intervention required]
+    [<-- REC : ctrl.Result{}
 end
-
-[<-- REC : ctrl.Result{}
 
 @enduml

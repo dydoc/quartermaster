@@ -63,6 +63,7 @@ note right of rejected
   Terminal.
   ProvisionedResource unchanged (update)
   or not created (create).
+  Email notification sent.
 end note
 
 note right of provisioned

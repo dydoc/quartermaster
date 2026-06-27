@@ -1,0 +1,90 @@
+@startuml seq_health_observer
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+    ArrowColor #737266
+    ArrowFontColor #444444
+    ArrowFontSize 12
+    LifeLineBorderColor #AAAAAA
+    ParticipantBorderColor #534AB7
+    ParticipantBackgroundColor #EEEDFE
+    ParticipantFontColor #3C3489
+    BoxBorderColor #B07D00
+    BoxBackgroundColor #FFF9E6
+    NoteBackgroundColor #F5F5FF
+    NoteBorderColor #9B94E0
+}
+skinparam roundcorner 6
+
+title Approval Controller — Health Observer\n(runs on every reconcile pass, across all ProvisionedResources)
+
+box "Management Cluster" #FFF9E6
+    participant "ResourceRequest\nReconciler" as REC
+    participant "Health\nObserver" as HO
+    participant "ProvisionedResource\nCRD" as PRCRD #E8F4FD
+end box
+
+box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
+    participant "CRD Target\nInstance" as CTI
+end box
+
+note over REC, PRCRD
+  The Health Observer is invoked on every reconcile pass —
+  including periodic resyncs — not only when a ResourceRequest
+  event triggers reconciliation. It operates independently of
+  the Provisioning State Machine and reads all ProvisionedResource
+  objects in ''provisioned'' or ''updating'' phase from the
+  controller's own cache.
+end note
+
+== Per-ProvisionedResource health check ==
+
+REC -> HO    : runHealthObserver()
+HO  -> PRCRD : list ProvisionedResources\n[phase: provisioned | updating]
+PRCRD --> HO : list of objects
+
+loop for each ProvisionedResource
+
+    HO -> CTI : get status.conditions\n[controller SA, read-only]
+
+    group Case 1 — Ready: no change required
+        CTI --> HO : Ready = True
+        note over HO : ProvisionedResource.status.phase\nalready reflects healthy state;\nno write needed
+    end
+
+    group Case 2 — NotReady: surface degraded status
+        CTI --> HO : Ready = False
+        HO  -> PRCRD : patch status.phase = degraded\n[status subresource write only]
+        note over PRCRD : Degraded status surfaced in the portal\nvia Web App informer cache.\nNo ResourceRequest created.
+    end
+
+    group Case 3 — NotFound + ProvisionedResource NOT in ''deleting'' phase
+        CTI --> HO : NotFound
+        note over HO : CRD target instance deleted out-of-band\n(not through a portal delete request).\nRe-applying to restore desired state.
+
+        HO  -> PRCRD : patch status.phase = unknown
+        HO  -> CTI   : SSA apply CRD target instance\n[controller SA — restores from\nProvisionedResource.spec.appliedParameters]
+
+        note over HO, CTI
+          AUDIT TRADE-OFF: This re-apply bypasses the
+          approval workflow and produces no ResourceRequest
+          audit trail entry. Operators who require an audit
+          trail for all target-cluster writes should disable
+          this behaviour and instead alert on status.phase = unknown,
+          treating out-of-band deletion as a manual incident.
+        end note
+
+        CTI --> HO : accepted
+        note over HO : Readiness of the re-applied instance\nwill be observed on the next reconcile pass.\nProvisionedResource status.phase remains\n''unknown'' until Ready is confirmed.
+    end
+
+    group Case 4 — NotFound + ProvisionedResource in ''deleting'' phase
+        CTI --> HO : NotFound
+        note over HO : Deletion in progress via a portal\ndelete request — handled by the\nProvisioning Handler. Health Observer skips.
+    end
+
+end
+
+REC <-- HO : done
+
+@enduml

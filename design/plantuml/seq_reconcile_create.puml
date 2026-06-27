@@ -16,7 +16,7 @@ skinparam sequence {
 }
 skinparam roundcorner 6
 
-title ResourceRequest Reconcile — create
+title ResourceRequest Reconcile — create\n(two passes: apply then readiness check)
 
 box "Management Cluster" #FFF9E6
     participant "ResourceRequest\nReconciler" as REC
@@ -30,88 +30,74 @@ end box
 
 box "Target Cluster  (via Rancher, controller SA)" #FFF3CD
     participant "CRD Target\nInstance" as CTI
-    participant "CRD Target\nController" as CTC
 end box
 
 participant "Mail Relay" as MAIL #F1EFE8
 
-== Approval ==
+== Apply pass (reconcile invocation — phase: pending) ==
 
 [-> REC    : reconcile [phase: pending]
 REC -> SM  : evaluate(decisions, approvers)
 SM  -> SM  : all required decisions present?
 
-group Happy path — approved
-    SM  -> RRCRD : patch phase = approved → provisioning
-    SM  -> PH    : provision(parameters)
-
-    PH  -> CTI   : SSA apply CRD target instance\n[controller SA]
-    activate CTI
-    CTI --> PH   : accepted
-
-    PH  -> CTI   : watch status.conditions
-    CTI -> CTC   : reconcile triggered
-    activate CTC
-    CTC -> CTC   : create derived objects via SSA\n(field ownership declared)
-    CTC --> CTI  : phase = Ready
-    deactivate CTC
-    CTI --> PH   : Ready observed
-    deactivate CTI
-
-    PH  -> PRW   : confirmed success
-    PRW -> PRCRD : create ProvisionedResource\n(appliedParameters, finalizer)
-    PRW -> RRCRD : patch phase = provisioned
-
-    REC -> NOT   : notify(provisioned)
-    NOT -> MAIL  : SMTP → requester
-end
-
-group Failure path — apply error
-    SM  -> RRCRD : patch phase = provisioning
-    SM  -> PH    : provision(parameters)
-
-    PH  -> CTI   : SSA apply — error\n(RBAC denial / cluster unreachable)
-    CTI --> PH   : error
-
-    note over PH : requeue with\nexponential backoff
-
-    PH  -> CTI   : SSA apply — retries exhausted
-    CTI --> PH   : error
-
-    PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
-
-    note over PRCRD : ProvisionedResource\nnot created
-
-    REC -> NOT   : notify(failed)
-    NOT -> MAIL  : SMTP → requester
-end
-
-group Failure path — CRD target NotReady
-    SM  -> RRCRD : patch phase = provisioning
-    SM  -> PH    : provision(parameters)
-
-    PH  -> CTI   : SSA apply — accepted
-    activate CTI
-    CTI -> CTC   : reconcile triggered — fails
-    activate CTC
-    CTC --> CTI  : phase = NotReady\nreason = <cause>
-    deactivate CTC
-    CTI --> PH   : NotReady after retries
-    deactivate CTI
-
-    PH  -> RRCRD : patch phase = failed\nfailureReason = <CRD target reason>
-
-    note over PRCRD : ProvisionedResource\nnot created
-
-    REC -> NOT   : notify(failed)
-    NOT -> MAIL  : SMTP → requester
-end
-
 group Failure path — rejected
     SM  -> RRCRD : patch phase = rejected
     note over PRCRD : no provisioning\nattempted
+    REC -> NOT   : notify(rejected)
+    NOT -> MAIL  : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-[<-- REC : ctrl.Result{}
+group Approved — begin provisioning
+    SM  -> RRCRD : patch phase: pending → approved → provisioning
+    SM  -> PH    : provision(parameters)
+
+    PH  -> CTI   : SSA apply CRD target instance\n[controller SA]
+
+    group Failure path — apply error
+        CTI --> PH : error (RBAC denial / cluster unreachable)
+        note over PH : requeue with exponential backoff;\nretries exhausted → patch phase = failed
+        PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+        REC -> NOT  : notify(failed)
+        NOT -> MAIL : SMTP → requester
+        [<-- REC : ctrl.Result{}
+    end
+
+    CTI --> PH   : accepted
+    note over PH, CTI : CRD Target Controller begins reconciling\nderived objects independently.\nReadiness is checked on re-invocation, not here.
+    [<-- REC : ctrl.Result{RequeueAfter: interval}
+end
+
+== Readiness check pass (reconcile re-invocation — phase: provisioning) ==
+note over REC : Repeated on each re-invocation until a terminal outcome.\nNo blocking watch in the reconcile function.
+
+[-> REC : reconcile [phase: provisioning]
+REC -> PH : check readiness
+PH  -> CTI : get status.conditions\n[controller SA, read-only]
+
+group Retry — NotReady or conditions absent
+    CTI --> PH : Ready = False
+    note over PH : requeue with exponential backoff
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
+end
+
+group Failure path — retries exhausted (CRD target NotReady)
+    CTI --> PH : Ready = False (max retries reached)
+    PH  -> RRCRD : patch phase = failed\nfailureReason = <CRD target reason>
+    note over PRCRD : ProvisionedResource\nnot created
+    REC -> NOT  : notify(failed)
+    NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
+end
+
+group Happy path — Ready confirmed
+    CTI --> PH  : Ready = True
+    PH  -> PRW  : confirmed success
+    PRW -> PRCRD : create ProvisionedResource\n(appliedParameters, finalizer)
+    PRW -> RRCRD : patch phase = provisioned
+    REC -> NOT  : notify(provisioned)
+    NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
+end
 
 @enduml

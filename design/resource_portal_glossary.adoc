@@ -1,0 +1,149 @@
+= Resource Portal — Terms and Abbreviations
+:toc:
+:toc-placement: preamble
+:sectnums:
+:icons: font
+
+This glossary defines the abbreviated terms and domain-specific names used across the Resource Portal architecture documentation.
+It is referenced by all three C4-level documents and is intended as a lookup companion, not required reading.
+
+toc::[]
+
+[glossary]
+== Abbreviations
+
+API::
+Application Programming Interface.
+In this document, "the API server" or "the Kubernetes API" refers to the kube-apiserver — the gateway through which all reads and writes to cluster state flow, including CRD operations performed by the Web App and the Approval Controller.
+
+C4::
+Context, Container, Component, Code.
+A hierarchical architecture diagramming framework by Simon Brown.
+The Resource Portal documentation covers three of the four levels: System Context (who interacts with the system and what it depends on), Container (the deployable runtime units and CRDs inside the system), and Component (the internal packages and logical modules within each container).
+
+CEL::
+Common Expression Language.
+A Google-developed expression language embedded in Kubernetes since v1.25 for writing validation rules directly in CRD schemas (`x-kubernetes-validations`).
+Used in this system to enforce field immutability on governance fields in `ResourceRequest` (e.g. `spec.approvers`, `spec.action`) and to validate enum values for `status.phase`.
+
+CR::
+Custom Resource.
+An instance of a CRD — a specific object stored in etcd whose schema is defined by the CRD, not by Kubernetes core.
+In this system: a `ResourceRequest`, `ProvisionedResource`, or `ResourceCatalogue` object is a CR.
+
+CRD::
+Custom Resource Definition.
+A Kubernetes extension mechanism that registers a new resource type with the API server.
+The portal defines three CRDs on the management cluster (`ResourceRequest`, `ProvisionedResource`, `ResourceCatalogue`) and depends on per-resource-type CRDs on target clusters (the _CRD target instances_).
+
+DAG::
+Directed Acyclic Graph.
+A graph in which edges have a direction and no path leads back to the same node.
+Used to describe the `approvalPolicy.stages` dependency model in `ResourceCatalogue`: each stage may declare `dependsOn` references to earlier stages, forming a graph of parallel and sequential approval requirements.
+The design enforces acyclicity structurally (a stage may only reference stages appearing earlier in the YAML list) rather than through runtime graph traversal.
+
+DFS::
+Depth-First Search.
+A graph traversal algorithm that visits each node by recursively following unvisited edges before backtracking.
+Evaluated and explicitly rejected as the mechanism for cycle detection in the approval stage DAG.
+The structural ordering constraint makes DFS unnecessary.
+
+DNS::
+Domain Name System.
+The naming system for networked hosts.
+Kubernetes enforces DNS label limits (maximum 63 characters per segment, 253 characters total) on object names.
+The `instanceNamePrefix` in `ResourceCatalogue` must satisfy `len(instanceNamePrefix) + 36 ≤ 63` to keep the resulting CRD target instance name within this limit.
+
+etcd::
+A distributed, strongly consistent key-value store used by Kubernetes as its backing store.
+All cluster state — including CRD objects — is persisted in etcd.
+"Three CRDs, all on the management cluster" means etcd on the management cluster is the single source of truth for all portal state; there is no separate portal database.
+
+GC::
+Garbage Collection.
+The Kubernetes mechanism that deletes objects with no remaining owner references.
+In this system, the Approval Controller removes the `portal.example.com/deprovisioning` finalizer from a `ProvisionedResource` only after the downstream CRD target instance is confirmed absent; once the finalizer is removed, Kubernetes GC deletes the `ProvisionedResource` object.
+
+GVR::
+Group / Version / Resource.
+The three-part Kubernetes identifier for a resource type (e.g. `apps / v1 / deployments`).
+`ProvisionedResource.spec.targetRef` carries the GVR of the CRD target instance on the downstream cluster alongside its namespace and name, so the Approval Controller can address the correct API endpoint without additional discovery.
+
+HTTP / HTTPS::
+HyperText Transfer Protocol (Secure).
+All traffic between users and the Web Application uses HTTPS.
+`HTTP` in sequence diagrams refers to the internal HTTP Handler component within the Web App process, not the transport protocol itself.
+
+LDAP::
+Lightweight Directory Access Protocol.
+A protocol for querying directory services such as Active Directory.
+The Approver Resolver uses LDAP to expand group-type approval routing rules into concrete user identity lists at submission time.
+LDAP is not consulted at reconcile time; the expanded list is embedded in the `ResourceRequest` at submission.
+
+OIDC::
+OpenID Connect.
+An identity layer built on top of OAuth 2.0.
+The Web App uses the OIDC authorization code flow to authenticate users against the Identity Provider (Keycloak or any compatible SSO).
+The `requester` identity and team OIDC claims written into a `ResourceRequest` are extracted from the OIDC ID token at submission time.
+
+PVC::
+PersistentVolumeClaim.
+A Kubernetes resource that requests storage.
+Mentioned as an example of a _derived object_ — a resource that a CRD target controller may create from a CRD target instance.
+The Approval Controller never reads, writes, or deletes PVCs or any other derived objects; that is the exclusive responsibility of the CRD target controller.
+
+RBAC::
+Role-Based Access Control.
+The Kubernetes authorization model that governs which identities can perform which verbs on which resources.
+Two RBAC identities are used in this system: the logged-in user's identity (via Rancher) for management-cluster write operations, and the controller service account with narrow RBAC on target clusters for provisioning.
+
+SA::
+Service Account.
+A non-human Kubernetes identity associated with a pod or controller.
+In sequence diagrams, "controller SA" refers to the Approval Controller's dedicated Kubernetes service account, which holds the narrow RBAC permissions required to apply and delete CRD target instances on downstream clusters via Rancher.
+
+SMTP::
+Simple Mail Transfer Protocol.
+The protocol used by the Notifier to deliver state-change email notifications to requesters via the Mail Relay.
+The Mail Relay is a dumb relay — it has no knowledge of portal state and performs no retry logic; retry and backoff are handled by the Notifier.
+
+SPA::
+Single Page Application.
+A frontend architecture in which a JavaScript application running in the browser manages routing and rendering.
+The Web App is explicitly _not_ an SPA: it is a server-side rendered monolith.
+There is no separate frontend bundle.
+
+SSA::
+Server-Side Apply.
+A Kubernetes API mechanism (stable since v1.22) in which the API server, rather than the client, is responsible for merging changes and tracking field ownership per field manager name.
+SSA is used throughout this system: the Approval Controller applies CRD target instances via SSA to declare ownership of configuration-significant fields; CRD target controllers apply all derived objects via SSA to prevent out-of-band modification; and the Approval Controller uses SSA for all status patches to avoid partial-update races.
+A field owned by one field manager cannot be patched by another without `--force`, which makes out-of-band modification of controlled fields fail immediately and visibly.
+
+SSO::
+Single Sign-On.
+A session and user authentication framework that allows a user to log in once and access multiple systems.
+In this architecture, the Identity Provider (e.g. Keycloak) acts as the SSO service shared by the Web App and Rancher.
+
+UID::
+Unique Identifier.
+The immutable, globally unique identifier assigned by the Kubernetes API server to every object at creation time.
+UIDs are used in this system as stable cross-references that survive name changes and namespace moves.
+The `targetRef.uid` in a `ResourceRequest` ensures the controller acts on the correct `ProvisionedResource` even if another object later reuses the same name.
+CRD target instance names on downstream clusters are derived from the UID of the originating `create` `ResourceRequest`.
+
+UUID::
+Universally Unique Identifier.
+A 128-bit identifier represented as 32 hexadecimal characters in the 8-4-4-4-12 format (e.g. `550e8400-e29b-41d4-a716-446655440000`), 36 characters in total including hyphens.
+Kubernetes UIDs are UUIDs.
+The 36-character UUID length is the basis for the constraint `len(instanceNamePrefix) + 36 ≤ 63` that governs CRD target instance naming.
+
+VCS::
+Version Control System.
+A system for tracking changes to files over time, typically Git.
+Approval workflow is native to the portal, not implemented as a pull request gate or external VCS integration.
+This is a deliberate design decision documented in the Context diagram.
+
+YAML::
+YAML Ain't Markup Language (recursive acronym).
+The human-readable data serialization format used for Kubernetes manifests, CRD definitions, and resource objects.
+`ResourceCatalogue` entries, including the `approvalPolicy` stages and `parameterSchema`, are authored as YAML and stored as structured data in etcd.

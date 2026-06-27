@@ -93,7 +93,7 @@ alt action = update or delete
         HTTP  --> USR  : 404 / 409 Target resource no longer exists\nor has been replaced
     end
 
-    PRCRD --> SUB : appliedParameters → snapshotted as previousParameters
+    PRCRD --> SUB : appliedParameters → previousParameters\ngeneration → previousGeneration
 end
 
 == Approver resolution ==

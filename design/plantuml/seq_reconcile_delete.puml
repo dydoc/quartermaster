@@ -16,7 +16,7 @@ skinparam sequence {
 }
 skinparam roundcorner 6
 
-title ResourceRequest Reconcile — delete
+title ResourceRequest Reconcile — delete\n(guard → delete pass → absence check pass)
 
 box "Management Cluster" #FFF9E6
     participant "ResourceRequest\nReconciler" as REC
@@ -35,7 +35,7 @@ end box
 
 participant "Mail Relay" as MAIL #F1EFE8
 
-== Guard ==
+== Guard & delete pass (reconcile invocation — phase: pending) ==
 
 [-> REC  : reconcile [action: delete, phase: pending]
 REC -> CG : check concurrent requests\nfor same ProvisionedResource UID
@@ -44,68 +44,84 @@ group Failure path — concurrent request active
     CG  -> RRCRD : list by label target-provisioned-resource = <UID>
     RRCRD --> CG : non-terminal ResourceRequest found
     CG  --> REC  : conflict
-    REC --> REC  : requeue with backoff
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
 end
 
 CG  --> REC  : no conflict
-
-== Approval ==
-
-REC -> SM  : evaluate(decisions, approvers)
+REC -> SM   : evaluate(decisions, approvers)
 
 group Failure path — rejected
     SM  -> RRCRD : patch phase = rejected
     note over PRCRD : ProvisionedResource unchanged
+    REC -> NOT   : notify(rejected)
+    NOT -> MAIL  : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-SM  -> RRCRD  : patch phase = approved → provisioning
+SM  -> RRCRD  : patch phase: pending → approved → provisioning
 SM  -> PRCRD  : patch status.phase = deleting
 
-== Happy path — delete ==
+SM  -> PH : deprovision(targetRef)
+PH  -> CTI : get CRD target instance\n[controller SA]
 
-group Happy path
-    SM  -> PH  : deprovision(targetRef)
-
-    PH  -> CTI : check existence\n[controller SA]
-
-    alt CRD target instance exists
-        CTI --> PH : found
-        PH  -> CTI : delete CRD target instance
-        CTI --> PH : accepted
-    else CRD target instance already absent
-        CTI --> PH : NotFound
-        note over PH : idempotent — treat as\nsuccessful deletion;\nproceed to finalizer removal
-    end
-
-    PH  -> CTI : watch until absent\n(or NotFound on first check)
-    CTI --> PH : absent confirmed
-
+alt CRD target instance already absent (NotFound)
+    CTI --> PH : NotFound
+    note over PH : idempotent — treat as\nconfirmed deletion;\nskip to finalizer removal
     PH  -> PRW : deletion confirmed
     PRW -> PRCRD : remove finalizer portal.example.com/deprovisioning\n→ GC deletes ProvisionedResource
-
     PRW -> RRCRD : patch phase = provisioned\n(delete action completed successfully)
-
-    REC -> NOT : notify(provisioned)
+    REC -> NOT  : notify(provisioned)
     NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
+else CRD target instance exists
+    CTI --> PH : found
+    PH  -> CTI : delete CRD target instance\n[controller SA]
+    CTI --> PH : accepted
+
+    group Failure path — delete error
+        CTI --> PH : error (RBAC denial / cluster unreachable)
+        note over PH : requeue with exponential backoff;\nretries exhausted → patch phase = failed
+        PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
+        note over PRCRD : ProvisionedResource retained —\nfinalizer not removed;\nCRD target instance may still exist
+        REC -> NOT  : notify(failed)
+        NOT -> MAIL : SMTP → requester
+        [<-- REC : ctrl.Result{}
+    end
+
+    note over PH, CTI : Deletion accepted. Absence is confirmed\non re-invocation, not in this pass.
+    [<-- REC : ctrl.Result{RequeueAfter: interval}
 end
 
-group Failure path — deletion error
-    PH  -> CTI  : delete CRD target instance — error\n(cluster unreachable / RBAC)
-    CTI --> PH  : error
+== Absence check pass (reconcile re-invocation — phase: provisioning) ==
+note over REC : Repeated on each re-invocation until absent or retries exhausted.
 
-    note over PH : requeue with\nexponential backoff
+[-> REC : reconcile [phase: provisioning]
+REC -> PH : check absence
+PH  -> CTI : get CRD target instance\n[controller SA, read-only]
 
-    PH  -> CTI  : delete — retries exhausted
-    CTI --> PH  : error
+group Retry — still exists
+    CTI --> PH : found (deletion in progress)
+    note over PH : requeue with exponential backoff
+    [<-- REC : ctrl.Result{RequeueAfter: backoff}
+end
 
+group Failure path — retries exhausted (not absent)
+    CTI --> PH : found (max retries reached)
     PH  -> RRCRD : patch phase = failed\nfailureReason = <cause>
-
     note over PRCRD : ProvisionedResource retained —\nfinalizer not removed;\nCRD target instance may still exist
-
     REC -> NOT  : notify(failed)
     NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
 end
 
-[<-- REC : ctrl.Result{}
+group Happy path — absent confirmed
+    CTI --> PH  : NotFound
+    PH  -> PRW  : deletion confirmed
+    PRW -> PRCRD : remove finalizer portal.example.com/deprovisioning\n→ GC deletes ProvisionedResource
+    PRW -> RRCRD : patch phase = provisioned\n(delete action completed successfully)
+    REC -> NOT  : notify(provisioned)
+    NOT -> MAIL : SMTP → requester
+    [<-- REC : ctrl.Result{}
+end
 
 @enduml
