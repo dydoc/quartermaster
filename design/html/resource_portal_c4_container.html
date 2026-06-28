@@ -462,7 +462,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_contract_for_crd_target_authors">2.4. Contract for CRD target authors</a></li>
 <li><a href="#_resourcerequest_crd">2.5. ResourceRequest CRD</a></li>
 <li><a href="#_provisionedresource_crd">2.6. ProvisionedResource CRD</a></li>
-<li><a href="#_resourcecatalogue_crd">2.7. ResourceCatalogue CRD</a></li>
+<li><a href="#_resourcecatalogue_crd">2.7. ResourceCatalogue CRD</a>
+<ul class="sectlevel3">
+<li><a href="#_fields">2.7.1. Fields</a></li>
+<li><a href="#_what_is_and_is_not_snapshotted_into_resourcerequest">2.7.2. What is and is not snapshotted into ResourceRequest</a></li>
+<li><a href="#_admission_webhook">2.7.3. Admission webhook</a></li>
+</ul>
+</li>
 <li><a href="#_mail_relay">2.8. Mail Relay</a></li>
 </ul>
 </li>
@@ -505,7 +511,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>At startup the Web App launches a <strong>informer</strong> for both <code>ResourceRequest</code> and <code>ProvisionedResource</code> objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.</p>
 </div>
 <div class="paragraph">
-<p>At submission time the Web App is responsible for <strong>resolving the approver list</strong>: it reads the relevant <code>ResourceCatalogue</code> entry, evaluates the approval routing rule (which may reference LDAP groups, team labels, or explicit user lists), expands it into a concrete list of approver identities, and embeds that list in the <code>ResourceRequest</code> it writes. The Approval Controller consumes the list as data — it never re-evaluates routing rules itself.</p>
+<p>At submission time the Web App is responsible for <strong>resolving the approval data</strong>: it reads the relevant <code>ResourceCatalogue</code> entry, evaluates the multi-stage approval policy (which may reference IdP groups, team labels, or explicit user lists), and populates per-stage group identifiers and user identities via the Approver Resolver. The Approval Controller consumes this data as structured state — it never re-evaluates routing rules or queries any identity service itself.</p>
 </div>
 </div>
 <div class="sect2">
@@ -584,7 +590,7 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p>The <code>action</code> field distinguishes three semantics: <code>create</code> (first provisioning), <code>update</code> (modification of an already-provisioned resource), and <code>delete</code> (deprovisioning). For <code>update</code> and <code>delete</code>, the <code>targetRef</code> field identifies the <code>ProvisionedResource</code> being acted upon, carrying both name and UID — the UID prevents the controller from acting on a different object that happens to share the same name.</p>
 </div>
 <div class="paragraph">
-<p>For <code>update</code> actions, the Web App snapshots the current <code>appliedParameters</code> from the <code>ProvisionedResource</code> into a <code>previousParameters</code> field at submission time. This lets the approver see exactly what is changing and gives the controller a deterministic rollback target if the update fails. The snapshot also includes the <code>resourceVersion</code> of the <code>ProvisionedResource</code> at the time of the snapshot — the controller validates this at reconcile time to detect whether another update completed between submission and approval, making the rollback target stale.</p>
+<p>For <code>update</code> actions, the Web App snapshots the current <code>appliedParameters</code> from the <code>ProvisionedResource</code> into a <code>previousParameters</code> field at submission time. This lets the approver see exactly what is changing and gives the controller a deterministic rollback target if the update fails. The snapshot also includes the <code>generation</code> of the <code>ProvisionedResource</code> at the time of the snapshot — the controller validates this at reconcile time to detect whether another spec update completed between submission and approval, making the rollback target stale. <code>generation</code> is used rather than <code>resourceVersion</code> so that status-only writes (e.g. the Health Observer updating <code>status.phase</code>) do not invalidate the rollback target. This requires the <code>ProvisionedResource</code> CRD to have the status subresource enabled, which separates spec writes (increment <code>generation</code>) from status writes (do not).</p>
 </div>
 <div class="paragraph">
 <p>Fields carried by a <code>ResourceRequest</code>:</p>
@@ -598,7 +604,13 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><code>spec.targetRef.name</code> / <code>spec.targetRef.uid</code> — present for <code>update</code> and <code>delete</code></p>
 </li>
 <li>
-<p><code>spec.resourceType</code> — references a <code>ResourceCatalogue</code> entry</p>
+<p><code>spec.resourceType</code> — references a <code>ResourceCatalogue</code> entry by name</p>
+</li>
+<li>
+<p><code>spec.targetCluster</code> — name of the target cluster resolved from <code>ResourceCatalogue.spec.clusterSelector</code> at submission time; the controller addresses the downstream cluster directly from this field without reading the catalogue</p>
+</li>
+<li>
+<p><code>spec.targetCRD</code> — snapshot of <code>{group, version, kind, instanceNamePrefix}</code> from <code>ResourceCatalogue</code> at submission time; the controller uses the GVK to construct and apply the CRD target instance</p>
 </li>
 <li>
 <p><code>spec.parameters</code> — the desired configuration</p>
@@ -607,13 +619,29 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><code>spec.previousParameters</code> — snapshot of current configuration at submission time (update only)</p>
 </li>
 <li>
-<p><code>spec.previousResourceVersion</code> — <code>resourceVersion</code> of the <code>ProvisionedResource</code> at snapshot time; used by the controller to detect stale rollback targets (update only)</p>
+<p><code>spec.previousGeneration</code> — <code>generation</code> of the <code>ProvisionedResource</code> at snapshot time; used by the controller to detect stale rollback targets (update only). <code>generation</code> increments only on spec writes, not status patches, so Health Observer updates do not cause false positives</p>
 </li>
 <li>
-<p><code>spec.approvalPolicy</code> — snapshot of the policy from <code>ResourceCatalogue</code> at submission time</p>
+<p><code>spec.approvalPolicy</code> — full snapshot of <code>ResourceCatalogue.spec.approvalPolicy</code> at submission time, including all stage definitions, <code>dependsOn</code> relationships, and <code>groupsClaim</code>; the controller evaluates the DAG from this snapshot without reading the catalogue</p>
 </li>
 <li>
-<p><code>spec.approvers</code> — pre-resolved list of required approver identities; immutable after creation via CEL validation rule</p>
+<p><code>spec.approvalStages[]</code> — per-stage resolved approval data, populated at submission time by the Approver Resolver:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>.name</code> — stage name from the policy</p>
+</li>
+<li>
+<p><code>.resolvedGroups[]</code> — OIDC group identifiers for this stage: copied directly from <code>idpGroup</code> entries; resolved from the target cluster&#8217;s label (and optionally transformed via <code>groupClaimTemplate</code>) for <code>teamLabel</code> entries; checked against the logged-in user&#8217;s <code>groupsClaim</code> at approval time</p>
+</li>
+<li>
+<p><code>.resolvedUsers[]</code> — individual user identity strings for this stage, sourced from <code>explicitUsers</code> entries; checked against the logged-in user&#8217;s OIDC <code>email</code> or <code>sub</code> at approval time</p>
+</li>
+<li>
+<p><code>.requiredApprovals</code> — minimum number of distinct user approvals to complete this stage</p>
+</li>
+</ul>
+</div>
 </li>
 <li>
 <p><code>spec.requester</code> — identity of the user who submitted the request, extracted from the OIDC token at submission time; used by the Notifier to address state-change emails; immutable after creation</p>
@@ -625,7 +653,20 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><code>status.notificationSent</code> — boolean set by the Notifier after a notification is successfully delivered; prevents duplicate notifications on controller restart</p>
 </li>
 <li>
-<p><code>status.decisions</code> — one entry per approver action, with identity and timestamp</p>
+<p><code>status.approvalStages[]</code> — per-stage approval state:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>.name</code> — stage name</p>
+</li>
+<li>
+<p><code>.state</code> — <code>pending</code> | <code>active</code> | <code>completed</code> | <code>rejected</code></p>
+</li>
+<li>
+<p><code>.decisions[]</code> — one entry per approve/reject action: <code>{approver, timestamp, action: approve|reject}</code></p>
+</li>
+</ul>
+</div>
 </li>
 <li>
 <p><code>status.failureReason</code> — populated on <code>failed</code> and <code>rollback_failed</code></p>
@@ -678,7 +719,7 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p>The controller updates <code>ProvisionedResource</code> only after observing that the CRD target instance on the downstream cluster has reached a <code>Ready</code> state — not optimistically at the moment of apply. This means <code>ProvisionedResource</code> always reflects the last confirmed operational state. During an in-flight update the object retains the previous <code>appliedParameters</code> until the new ones are confirmed; if the update fails the controller uses those parameters as the rollback target.</p>
 </div>
 <div class="paragraph">
-<p>The <code>ProvisionedResource</code> carries a finalizer (<code>portal.example.com/deprovisioning</code>) added by the controller at creation time. The finalizer is removed only after the controller has confirmed that the CRD target instance on the downstream cluster has been successfully deleted. The Provisioning Handler checks for <code>NotFound</code> before entering the watch loop — if the instance is already absent (e.g. after a crash-restart), the handler treats this as a confirmed deletion and proceeds directly to finalizer removal, making the delete path fully idempotent.</p>
+<p>The <code>ProvisionedResource</code> carries a finalizer (<code>portal.example.com/deprovisioning</code>) added by the controller at creation time. The finalizer is removed only after the controller has confirmed that the CRD target instance on the downstream cluster has been successfully deleted. On each reconcile invocation in the delete path, the Provisioning Handler reads the CRD target instance — if it receives <code>NotFound</code> (e.g. after a crash-restart or on first check), the handler treats this as confirmed deletion and proceeds directly to finalizer removal, making the delete path fully idempotent.</p>
 </div>
 <div class="paragraph">
 <p>Fields carried by <code>ProvisionedResource</code>:</p>
@@ -738,7 +779,219 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <div class="sect2">
 <h3 id="_resourcecatalogue_crd">2.7. ResourceCatalogue CRD</h3>
 <div class="paragraph">
-<p><code>ResourceCatalogue</code> defines what resources are available for request. Each entry describes a resource type (name, schema, target cluster scope), the quota limits that apply, and the approval routing rule (which group or identity must approve requests of this type). Platform Admins manage these objects through the Web App&#8217;s administration interface. The Web App reads the catalogue at submission time to validate the request and resolve the approver list.</p>
+<p><code>ResourceCatalogue</code> defines what resources are available for request. It is cluster-scoped, has no <code>status</code> subresource, and has no controller loop — it is pure admin-written configuration. The Web App reads it on demand via direct API calls (not the informer cache) because it is low-frequency, admin-written, and consulted only at submission time. The Approval Controller never reads it.</p>
+</div>
+<div class="sect3">
+<h4 id="_fields">2.7.1. Fields</h4>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>spec.displayName</code></dt>
+<dd>
+<p>Human-readable name shown in the catalogue browsing UI. Required.</p>
+</dd>
+<dt class="hdlist1"><code>spec.description</code></dt>
+<dd>
+<p>Optional longer description shown to End Users at submission time.</p>
+</dd>
+<dt class="hdlist1"><code>spec.targetCRD</code></dt>
+<dd>
+<p>The CRD type to provision on target clusters. All sub-fields are required.</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>group</code>, <code>version</code>, <code>kind</code> — GVK of the CRD target instance on the downstream cluster</p>
+</li>
+<li>
+<p><code>instanceNamePrefix</code> — prefix prepended to the UID of the originating <code>create</code> <code>ResourceRequest</code> to form the target instance name. CEL constraint: <code>size(instanceNamePrefix) + 36 ≤ 63</code> (Kubernetes DNS label limit). The prefix should include the separator character (e.g. <code>"ns-"</code>, not <code>"ns"</code>).</p>
+<div class="paragraph">
+<p>Snapshotted into <code>ResourceRequest.spec.targetCRD</code> at submission time.</p>
+</div>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1"><code>spec.clusterSelector</code></dt>
+<dd>
+<p>Standard Kubernetes <code>LabelSelector</code>. Used exclusively at submission time by the Submission Handler to find eligible Rancher cluster objects.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Zero matches → submission fails with a user-facing error</p>
+</li>
+<li>
+<p>One match → target cluster auto-selected</p>
+</li>
+<li>
+<p>Multiple matches → user selects from the submission form</p>
+<div class="paragraph">
+<p>The selected cluster name is written to <code>ResourceRequest.spec.targetCluster</code>. <code>clusterSelector</code> is never snapshotted. The controller uses the concrete cluster name in the <code>ResourceRequest</code> directly.</p>
+</div>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1"><code>spec.parameterSchema</code></dt>
+<dd>
+<p>An embedded OpenAPI v3 schema defining the parameters an End User may submit. Cross-field validation uses <code>x-kubernetes-validations</code> CEL rules within the schema. The field uses <code>x-kubernetes-preserve-unknown-fields: true</code> in the CRD definition because the schema structure cannot be predicted at CRD definition time.</p>
+<div class="paragraph">
+<p>Snapshotted in full into <code>ResourceRequest.spec.parameterSchema</code> at submission time for audit.</p>
+</div>
+</dd>
+<dt class="hdlist1"><code>spec.quota</code></dt>
+<dd>
+<p>Optional. Both <code>perUser</code> and <code>perTeam</code> are independently optional.</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>perUser.maxActive</code> — max <code>ResourceRequest</code> objects in non-terminal phase per user per resource type</p>
+</li>
+<li>
+<p><code>perUser.maxProvisioned</code> — max <code>ProvisionedResource</code> objects per user per resource type</p>
+</li>
+<li>
+<p><code>perTeam.teamClaim</code> — required when <code>perTeam</code> is present; OIDC claim name that identifies the user&#8217;s team; must resolve to a single string value (multi-valued claim → submission fails with a clear error)</p>
+</li>
+<li>
+<p><code>perTeam.maxActive</code> / <code>perTeam.maxProvisioned</code> — same limits at team level</p>
+<div class="paragraph">
+<p>Quota checks are performed by the Submission Handler reading the informer cache at submission time (soft enforcement — see Key Design Decisions). Not snapshotted.</p>
+</div>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1"><code>spec.approvalPolicy</code></dt>
+<dd>
+<p>The multi-stage approval policy governing who must approve requests of this type. Snapshotted in full into <code>ResourceRequest.spec.approvalPolicy</code> at submission time.</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>groupsClaim</code> — required when any stage uses a group-type approver. The OIDC claim name whose values are checked for group membership at approval time (e.g. <code>"groups"</code>, <code>"roles"</code>). Configurable per catalogue entry because claim names vary across IdP configurations.</p>
+</li>
+<li>
+<p><code>stages[]</code> — ordered list of approval stages forming a DAG. A stage with an empty <code>dependsOn</code> list becomes active immediately on submission. A stage becomes active only when all stages in its <code>dependsOn</code> list reach <code>completed</code> state. All stages must complete for the overall request to be approved.</p>
+<div class="paragraph">
+<p>Each stage:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>name</code> — unique within the catalogue; pattern <code>[a-z][a-z0-9-]*</code>; appears in <code>status.approvalStages</code> and is visible to users in the portal</p>
+</li>
+<li>
+<p><code>dependsOn[]</code> — names of stages that must complete before this stage activates. A stage may only reference stages that appear earlier in the YAML list — the structural ordering constraint that prevents DAG cycles without graph traversal</p>
+</li>
+<li>
+<p><code>requiredApprovals</code> — minimum number of distinct user approvals (N-of-M) to complete this stage; minimum 1</p>
+</li>
+<li>
+<p><code>approvers[]</code> — one or more approver entries merged into a single pool per stage. Three types:</p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>type: idpGroup</code> with <code>values: []string</code> (required, min 1)</dt>
+<dd>
+<p>OIDC group identifiers. Membership is checked against the logged-in user&#8217;s <code>groupsClaim</code> at the moment of the approval action. No group expansion is performed at submission.</p>
+</dd>
+<dt class="hdlist1"><code>type: explicitUsers</code> with <code>values: []string</code> (required, min 1)</dt>
+<dd>
+<p>Individual user identity strings in the same format as the OIDC <code>email</code> or <code>sub</code> claim used throughout the system.</p>
+</dd>
+<dt class="hdlist1"><code>type: teamLabel</code></dt>
+<dd>
+<p>Reads the label at <code>labelKey</code> (optional; default <code>"portal.example.com/team"</code>) from the Rancher cluster object for the selected target cluster and records the value as a group identifier for this stage.
+Optional <code>groupClaimTemplate</code>: a template string using <code>{team}</code> as a placeholder, applied to the label value to produce the final group identifier (e.g. <code>"cn={team},ou=groups,dc=example,dc=com"</code> for environments where the OIDC <code>groupsClaim</code> carries full DNs but cluster labels carry only the team name).
+Optional <code>values</code>: allowlist of valid label values; if non-empty, a label value absent from the list causes this approver entry to contribute zero identities to the stage pool.</p>
+</dd>
+</dl>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</dd>
+</dl>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_what_is_and_is_not_snapshotted_into_resourcerequest">2.7.2. What is and is not snapshotted into ResourceRequest</h4>
+<div class="paragraph">
+<p>The Approval Controller is designed to never read <code>ResourceCatalogue</code>. Everything it needs is in the <code>ResourceRequest</code>.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 37.5%;">
+<col style="width: 25%;">
+<col style="width: 37.5%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Treatment</th>
+<th class="tableblock halign-left valign-top">Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.approvalPolicy</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Snapshotted in full</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Controller evaluates the DAG without reading the catalogue; historical requests reflect the policy at submission time</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.parameterSchema</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Snapshotted in full</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Audit trail; the schema in effect at submission is permanently recorded</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.targetCRD</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Snapshotted in full</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Controller needs the GVK to apply the CRD target instance</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Resolved target cluster</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Written as a concrete name to <code>ResourceRequest.spec.targetCluster</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Controller addresses the downstream cluster by name; the selector is consumed at submission</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.clusterSelector</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not snapshotted</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Consumed fully at submission; not needed downstream</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.quota</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not snapshotted</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Checked live against informer cache at submission time only</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>spec.displayName</code> / <code>spec.description</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not snapshotted</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UI metadata only; not needed by the controller</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_admission_webhook">2.7.3. Admission webhook</h4>
+<div class="paragraph">
+<p>A <code>ValidatingAdmissionWebhook</code> enforces constraints on <code>ResourceCatalogue</code> objects that cannot be expressed in CEL schema validation alone:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Stage names are unique within the <code>stages</code> list</p>
+</li>
+<li>
+<p>Every <code>dependsOn</code> entry names a stage that exists</p>
+</li>
+<li>
+<p>Every <code>dependsOn</code> entry names a stage that appears earlier in the list (structural ordering constraint)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Schema-level constraints (<code>instanceNamePrefix</code> length, <code>requiredApprovals ≥ 1</code>, <code>name</code> pattern, <code>teamClaim</code> required when <code>perTeam</code> is present) are enforced by CEL rules in the CRD definition itself.</p>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -769,10 +1022,10 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><strong>Approver</strong> sees the pending request, approves it. Web App records the decision in the <code>ResourceRequest</code>.</p>
 </li>
 <li>
-<p>Approval Controller detects the transition, advances phase to <code>provisioning</code>, applies the target-cluster CRD via Rancher as controller service account.</p>
+<p>Approval Controller detects the transition, advances phase to <code>provisioning</code>, applies the target-cluster CRD via Rancher as controller service account, and exits with <code>RequeueAfter</code>.</p>
 </li>
 <li>
-<p>Controller watches the CRD target instance until it reaches <code>Ready</code>. On confirmation, writes <code>ProvisionedResource</code> with <code>appliedParameters</code>, advances <code>ResourceRequest</code> phase to <code>provisioned</code>, sends notification email.</p>
+<p>On each subsequent reconcile re-invocation, the controller reads the CRD target instance <code>status.conditions</code>. Once <code>Ready</code> is confirmed, it writes <code>ProvisionedResource</code> with <code>appliedParameters</code>, advances <code>ResourceRequest</code> phase to <code>provisioned</code>, and sends a notification email.</p>
 </li>
 <li>
 <p><strong>End User</strong> sees <code>provisioned</code> status from the informer cache, no polling.</p>
@@ -791,19 +1044,19 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p>Web App checks that no other <code>ResourceRequest</code> is in a non-terminal phase for the same <code>ProvisionedResource</code>. If one exists, submission is rejected with an explicit message.</p>
 </li>
 <li>
-<p>Web App snapshots <code>appliedParameters</code> and <code>resourceVersion</code> into <code>previousParameters</code> and <code>previousResourceVersion</code>, creates a <code>ResourceRequest</code> (<code>action: update</code>, <code>targetRef</code> with UID).</p>
+<p>Web App snapshots <code>appliedParameters</code> and <code>generation</code> into <code>previousParameters</code> and <code>previousGeneration</code>, creates a <code>ResourceRequest</code> (<code>action: update</code>, <code>targetRef</code> with UID).</p>
 </li>
 <li>
 <p><strong>Approver</strong> sees a diff view (new parameters vs <code>previousParameters</code>), approves it.</p>
 </li>
 <li>
-<p>Controller validates <code>previousResourceVersion</code> against the current <code>ProvisionedResource.resourceVersion</code>. If they differ, another update completed between submission and approval — the controller sets phase to <code>failed</code> with <code>failureReason = stale rollback target</code> rather than proceeding with a potentially incorrect rollback target.</p>
+<p>Controller validates <code>previousGeneration</code> against the current <code>ProvisionedResource.metadata.generation</code>. If they differ, another spec update completed between submission and approval — the controller sets phase to <code>failed</code> with <code>failureReason = stale rollback target</code> rather than proceeding with a potentially incorrect rollback target.</p>
 </li>
 <li>
-<p>Controller advances to <code>provisioning</code>, applies the updated CRD target instance via SSA.</p>
+<p>Controller advances to <code>provisioning</code>, applies the updated CRD target instance via SSA, and exits with <code>RequeueAfter</code>.</p>
 </li>
 <li>
-<p>Controller watches for <code>Ready</code> confirmation. On success, updates <code>ProvisionedResource</code> with new <code>appliedParameters</code>, sends notification.</p>
+<p>On each subsequent reconcile re-invocation, the controller reads the CRD target instance <code>status.conditions</code>. On confirmed <code>Ready</code>, it updates <code>ProvisionedResource</code> with new <code>appliedParameters</code> and sends a notification.</p>
 </li>
 <li>
 <p><strong>End User</strong> sees updated state from informer cache.</p>
@@ -875,7 +1128,7 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p>Controller checks whether the CRD target instance exists on the downstream cluster. If it is already absent (e.g. deleted out-of-band, or the controller crashed after a previous deletion), it proceeds directly to finalizer removal — the delete path is fully idempotent.</p>
 </li>
 <li>
-<p>If present, controller deletes the CRD target instance via Rancher and watches for it to disappear.</p>
+<p>If present, controller deletes the CRD target instance via Rancher and exits with <code>RequeueAfter</code>. On each subsequent reconcile re-invocation the controller reads the object; once absent (<code>NotFound</code>), it proceeds.</p>
 </li>
 <li>
 <p>On confirmed absence, controller removes the finalizer from <code>ProvisionedResource</code> — the GC deletes it.</p>
@@ -892,7 +1145,7 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <h2 id="_key_design_decisions">4. Key Design Decisions</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><strong>Dual identity, explicit boundary.</strong> The Web App uses the logged-in user&#8217;s identity for all management-cluster operations so that every user action is fully auditable through standard Kubernetes audit logs. The Approval Controller uses a dedicated service account with narrow RBAC on target clusters for the provisioning step. End users have no <code>create</code>/<code>patch</code> permissions on the CRD types managed by the portal on those clusters. The portal is not a convenience layer over existing user permissions — it is the only path.</p>
+<p><strong>Dual identity, explicit boundary.</strong> The Web App uses the logged-in user&#8217;s identity for all <em>write</em> operations on the management cluster (creating <code>ResourceRequest</code> objects, recording approver decisions) so that every user action is fully auditable through standard Kubernetes audit logs. <em>Read</em> operations — the informer cache watch connection — use the Web App&#8217;s own service account; a <code>SharedInformer</code> is a single long-lived connection and cannot carry per-user identity. Object-level access filtering for the informer-served data is enforced at the application layer within each handler (see "Informer cache access control" below). The Approval Controller uses a dedicated service account with narrow RBAC on target clusters for the provisioning step. End users have no <code>create</code>/<code>patch</code> permissions on the CRD types managed by the portal on those clusters. The portal is not a convenience layer over existing user permissions — it is the only path.</p>
 </div>
 <div class="paragraph">
 <p><strong>SSA field ownership + drift reconciliation over admission webhook.</strong> The integrity of derived objects on target clusters is enforced through the CRD target controller using Server-Side Apply with explicit field ownership combined with active drift reconciliation on every resync — not by the Approval Controller and not by a ValidatingAdmissionWebhook. The Approval Controller&#8217;s scope ends at the CRD target instance; everything below that is the CRD target controller&#8217;s responsibility, enforced by the onboarding contract. The trade-offs accepted: the reconcile window (seconds) is the gap in protection, and synchronous DELETE coverage is not provided. In exchange, there is no additional webhook component to operate on each target cluster, no Fail Open/Fail Closed availability dilemma, and no bootstrap ordering dependency.</p>
@@ -904,16 +1157,16 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><strong><code>rollback_failed</code> as a distinct terminal phase.</strong> When rollback retries are exhausted the cluster state is genuinely unknown — the CRD target instance may be partially updated. Using <code>failed</code> for both "rollback confirmed" and "rollback failed" would hide this distinction from the operator. <code>rollback_failed</code> is a signal that manual intervention is required, not merely a retry.</p>
 </div>
 <div class="paragraph">
-<p><strong>CEL immutability on governance fields.</strong> <code>spec.approvers</code>, <code>spec.approvalPolicy</code>, <code>spec.requester</code>, <code>spec.action</code>, and <code>spec.targetRef</code> on <code>ResourceRequest</code> are immutable after creation. This prevents any actor — including the Web App itself — from retroactively modifying the governance perimeter of an in-flight request.</p>
+<p><strong>CEL immutability on governance fields.</strong> <code>spec.approvalStages</code>, <code>spec.approvalPolicy</code>, <code>spec.targetCluster</code>, <code>spec.targetCRD</code>, <code>spec.requester</code>, <code>spec.action</code>, and <code>spec.targetRef</code> on <code>ResourceRequest</code> are immutable after creation. This prevents any actor — including the Web App itself — from retroactively modifying the governance perimeter of an in-flight request.</p>
 </div>
 <div class="paragraph">
 <p><strong><code>status.notificationSent</code> prevents duplicate notifications.</strong> The Notifier sets this boolean after successful delivery. On controller restart, the Reconciler checks this field before invoking the Notifier, ensuring at-most-once delivery without external state. A notification that was in-flight at restart time may be lost (fire-and-forget semantics are preserved), but a completed transition is never re-notified.</p>
 </div>
 <div class="paragraph">
-<p><strong><code>previousResourceVersion</code> guards against stale rollback targets.</strong> The Web App snapshots the <code>ProvisionedResource.resourceVersion</code> at submission time. If another update completes and is confirmed between submission and approval, the controller detects the mismatch and fails the request rather than proceeding with a rollback target that no longer reflects the actual pre-update state.</p>
+<p><strong><code>previousGeneration</code> guards against stale rollback targets.</strong> The Web App snapshots <code>ProvisionedResource.metadata.generation</code> at submission time. If another spec update completes and is confirmed between submission and approval, the controller detects the mismatch and fails the request rather than proceeding with a rollback target that no longer reflects the actual pre-update state. <code>generation</code> is preferred over <code>resourceVersion</code> because the Health Observer writes status-only patches (updating <code>status.phase</code> without touching spec), and those patches increment <code>resourceVersion</code> but not <code>generation</code> — using <code>resourceVersion</code> would cause false-positive stale-target failures on every Health Observer pass during the approval window.</p>
 </div>
 <div class="paragraph">
-<p><strong>Deprovisioning is idempotent on <code>NotFound</code>.</strong> The Provisioning Handler checks for <code>NotFound</code> before entering the delete watch loop. This makes the delete path safe to re-run after a crash-restart without special-casing the controller logic.</p>
+<p><strong>Deprovisioning is idempotent on <code>NotFound</code>.</strong> On each reconcile invocation in the delete path, the Provisioning Handler reads the CRD target instance. If it receives <code>NotFound</code>, it treats this as confirmed deletion and proceeds directly to finalizer removal — no special-case logic needed for crash-restart recovery.</p>
 </div>
 <div class="paragraph">
 <p><strong>Monolith, not microservices.</strong> The Web Application is intentionally a single deployable binary. The operational surface is kept small: one Deployment, one Service, no inter-service networking inside the portal boundary. The separation of concerns is internal (packages, not processes).</p>
@@ -922,7 +1175,7 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <p><strong>Policy as data, not code.</strong> The approval policy lives in <code>ResourceCatalogue</code> and is snapshotted into <code>ResourceRequest</code> at submission time. The Approval Controller is a pure state machine that never contains routing logic. Routing rules can be changed without redeploying the controller, and historical requests always reflect the policy that was in effect when they were submitted.</p>
 </div>
 <div class="paragraph">
-<p><strong>Pre-resolved approver list.</strong> The Web App translates a routing rule into a list of concrete identities at submission time. The controller sees only a flat list — no LDAP lookups, no group expansion at reconcile time. This keeps the controller fast, testable, and independent of directory service availability.</p>
+<p><strong>Per-stage approval data resolved at submission; group membership checked live at approval.</strong> The Approver Resolver is called once per submission and populates <code>spec.approvalStages</code> with OIDC group identifiers and individual user identities — no group expansion to a flat user list is performed. For <code>idpGroup</code> and <code>teamLabel</code> approvers, group membership is checked live against the logged-in user&#8217;s current OIDC token at the moment they submit an approval decision. This means a user who loses group membership after submission immediately loses their approval right on pending requests — revoked access takes effect without waiting for a new submission. The Approval Controller never queries any identity service; it evaluates only stage state, decision counts, and the DAG structure from <code>spec.approvalPolicy</code>.</p>
 </div>
 <div class="paragraph">
 <p><strong>Informer, not polling.</strong> The Web App uses a informer to maintain a live cache of <code>ResourceRequest</code> and <code>ProvisionedResource</code> objects. Status updates appear in the UI within the informer&#8217;s resync period, driven by Kubernetes watch events, with no per-request API calls.</p>
@@ -933,12 +1186,18 @@ The Health Observer re-applies a deleted CRD target instance directly, without c
 <div class="paragraph">
 <p><strong>Failure is a first-class state.</strong> <code>failed</code> and <code>rollback_failed</code> are terminal phases with a structured <code>failureReason</code>. The controller retries with backoff before reaching either. Once in a terminal phase, the request is immutable — a new request must be submitted. This avoids ambiguous partial-apply states.</p>
 </div>
+<div class="paragraph">
+<p><strong>Informer cache access control is application-layer, not RBAC-layer.</strong> The Web App&#8217;s <code>SharedInformer</code> uses the Web App&#8217;s own service account for its single watch connection — it sees all <code>ResourceRequest</code> and <code>ProvisionedResource</code> objects. Per-user visibility is enforced in application code: the Status Handler filters objects by the requester identity stored in <code>spec.requester</code>; the Approver Handler filters by whether the logged-in user is eligible for any active approval stage, checked against <code>spec.approvalStages[].resolvedUsers</code> and <code>spec.approvalStages[].resolvedGroups</code> (OIDC group claim check). Write operations (creating <code>ResourceRequest</code>, recording decisions) remain authenticated as the logged-in user via Rancher and produce per-user Kubernetes audit log entries. This split is a deliberate design choice: using a per-user watch connection would require a separate informer per active session, which does not scale. The application-layer filtering is the appropriate boundary here because the CRD objects carry no sensitive data beyond portal state — the security boundary that matters is the <code>create</code>/<code>patch</code> RBAC on the target clusters, which is enforced by the dual identity plane.</p>
+</div>
+<div class="paragraph">
+<p><strong>Quota enforcement is soft at submission time.</strong> Quota checks are performed by the Submission Handler reading the informer cache immediately before writing the <code>ResourceRequest</code>. Two near-simultaneous <code>create</code> submissions from the same user could both observe the same cache state, both pass the quota check, and both succeed — the cache has a finite resync window and no per-submission write lock exists. There is no controller-side quota re-enforcement. This is an accepted trade-off: quota is a governance guardrail, not a security control, and the race window is narrow in practice. Operators requiring hard quota enforcement should add a validating admission webhook on <code>ResourceRequest</code> that counts existing objects at write time via the API server.</p>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-06-14 09:51:18 UTC
+Last updated 2026-06-28 06:18:46 UTC
 </div>
 </div>
 </body>

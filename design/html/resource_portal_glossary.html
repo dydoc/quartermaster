@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.26">
-<title>Architecture Tooling — Makefile Reference</title>
+<title>Resource Portal — Terms and Abbreviations</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -437,571 +437,192 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </head>
 <body class="article">
 <div id="header">
-<h1>Architecture Tooling — Makefile Reference</h1>
+<h1>Resource Portal — Terms and Abbreviations</h1>
 </div>
 <div id="content">
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>Architecture documentation for the project using <a href="https://structurizr.com">Structurizr</a> and the C4 model.</p>
+<p>This glossary defines the abbreviated terms and domain-specific names used across the Resource Portal architecture documentation.
+It is referenced by all three C4-level documents and is intended as a lookup companion, not required reading.</p>
 </div>
 <!-- toc disabled -->
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_layout">1. Layout</a></li>
-<li><a href="#_prerequisites">2. Prerequisites</a></li>
-<li><a href="#_quick_start">3. Quick start</a></li>
-<li><a href="#_runtime_detection">4. Runtime detection</a>
-<ul class="sectlevel2">
-<li><a href="#_compose_resolution_order_podman">4.1. Compose resolution order (Podman)</a></li>
-<li><a href="#_podman_one_time_setup_opensuse_and_other_distros_without_podman_compose">4.2. Podman one-time setup (openSUSE and other distros without podman-compose)</a></li>
-</ul>
-</li>
-<li><a href="#_plantuml_detection">5. PlantUML detection</a></li>
-<li><a href="#_asciidoctor_detection">6. AsciiDoctor detection</a></li>
-<li><a href="#_typical_workflow">7. Typical workflow</a></li>
-<li><a href="#_export_formats">8. Export formats</a></li>
-<li><a href="#_using_diagrams_in_asciidoc">9. Using diagrams in AsciiDoc</a></li>
-<li><a href="#_using_diagrams_in_markdown">10. Using diagrams in Markdown</a></li>
-<li><a href="#_what_to_commit">11. What to commit</a></li>
-<li><a href="#_updating_the_container_image">12. Updating the container image</a></li>
-<li><a href="#_available_commands">13. Available commands</a></li>
+<li><a href="#_abbreviations">Abbreviations</a></li>
 </ul>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_layout">1. Layout</h2>
+<h2 id="_abbreviations">Abbreviations</h2>
 <div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code>design/
-├── docker-compose.yml          # Structurizr vNext (local)
-├── Makefile                    # Entry point for all commands
-├── .gitignore
-├── export/
-│   └── export.sh               # Multi-format export script
-├── plantuml/                   # Versioned .puml source files
-│   └── *.puml
-├── workspace/
-│   ├── workspace.dsl           # &lt;- SOURCE: C4 model in DSL
-│   ├── workspace.json          # &lt;- LAYOUT: written automatically by the UI (commit this!)
-│   └── state_resource_request.puml
-└── exported/                   # Generated artefacts (do not commit)
-    ├── png/                    # High-resolution PNG
-    ├── svg/                    # SVG (ideal for AsciiDoc / Markdown)
-    ├── svg-plantuml/           # SVG rendered from versioned .puml sources
-    ├── plantuml/               # Standard PlantUML
-    ├── plantuml-c4/            # PlantUML with C4 styles (visually closer to the UI)
-    ├── mermaid/                # Mermaid (GitHub, GitLab, MkDocs)
-    ├── dot/                    # Graphviz DOT
-    ├── ilograph/               # Ilograph (interactive)
-    ├── json/                   # Serialised workspace JSON
-    ├── html/                   # HTML rendered from .adoc sources  (make docs-html)
-    └── static/                 # Navigable static site</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_prerequisites">2. Prerequisites</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Docker <strong>or</strong> Podman — nothing else required at the OS level.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_quick_start">3. Quick start</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">make up    # start Structurizr — runtime auto-detected
-make open  # open http://127.0.0.1:8080</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_runtime_detection">4. Runtime detection</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The Makefile and <code>export.sh</code> auto-detect the container runtime (Docker preferred, Podman as fallback) and the compose command. You can always pin them explicitly:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">CONTAINER_RUNTIME=podman make up
-CONTAINER_RUNTIME=docker make export
-COMPOSE_CMD="docker-compose" make up   # pin a specific compose binary</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Or export for the whole shell session:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">export CONTAINER_RUNTIME=podman
-make up
-make export</code></pre>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_compose_resolution_order_podman">4.1. Compose resolution order (Podman)</h3>
-<div class="paragraph">
-<p>The following are tried in order; the first one found is used:</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><code>$COMPOSE_CMD</code> env var — explicit override, always honoured</p>
-</li>
-<li>
-<p><code>docker compose</code> plugin — works when <code>DOCKER_HOST</code> points to the Podman socket</p>
-</li>
-<li>
-<p><code>docker-compose</code> standalone binary — same socket approach</p>
-</li>
-<li>
-<p><code>podman compose</code> thin wrapper — requires an external provider (Podman ≥ 4.7)</p>
-</li>
-<li>
-<p><code>podman-compose</code> Python package</p>
-</li>
-</ol>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_podman_one_time_setup_opensuse_and_other_distros_without_podman_compose">4.2. Podman one-time setup (openSUSE and other distros without podman-compose)</h3>
-<div class="paragraph">
-<p>The recommended approach is to expose the rootless Podman socket and point <code>DOCKER_HOST</code> at it, so that <code>docker-compose</code> works without any wrapper:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash"># 1. Enable the user-level socket (survives reboots)
-systemctl --user enable --now podman.socket
-
-# 2. Add to ~/.bashrc (or ~/.profile)
-echo 'export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock' &gt;&gt; ~/.bashrc
-source ~/.bashrc
-
-# 3. Install docker-compose (openSUSE)
-sudo zypper install docker-compose
-
-# 4. Verify — should show containers managed by Podman
-docker-compose version</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>There is also a convenience target that prints these steps:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">make podman-setup</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>After the one-time setup, <code>make up</code> and <code>make export</code> work exactly like Docker.</p>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_plantuml_detection">5. PlantUML detection</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The Makefile auto-detects how to invoke PlantUML for the <code>plantuml-svg</code> and <code>export-plantuml-svg</code> targets. The resolution order is (first match wins):</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><code>$PLANTUML_CMD</code> env var — explicit override, e.g. <code>plantuml</code> or <code>java -jar /opt/plantuml.jar</code></p>
-</li>
-<li>
-<p><code>plantuml</code> binary on <code>PATH</code> — installed via <code>zypper install plantuml</code> or equivalent</p>
-</li>
-<li>
-<p><code>java -jar</code> with <code>$PLANTUML_JAR</code> env var pointing to the <code>.jar</code> file</p>
-</li>
-<li>
-<p>Container <code>plantuml/plantuml</code> — pulled on demand via the detected container runtime</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>Override examples:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">PLANTUML_CMD="java -jar /opt/plantuml.jar" make plantuml-svg
-PLANTUML_JAR=/opt/plantuml.jar make plantuml-svg
-PLANTUML_CMD="docker run --rm -v $(pwd):/work plantuml/plantuml" make plantuml-svg</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>The source and destination directories can also be overridden:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">PLANTUML_SRC=my-diagrams PLANTUML_DEST=exported/my-svg make plantuml-svg</code></pre>
-</div>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 20%;">
-<col style="width: 40%;">
-<col style="width: 40%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Variable</th>
-<th class="tableblock halign-left valign-top">Default</th>
-<th class="tableblock halign-left valign-top">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PLANTUML_CMD</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><em>(auto-detected)</em></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Full command used to invoke PlantUML</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PLANTUML_JAR</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><em>(empty)</em></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Path to <code>plantuml.jar</code>; activates <code>java -jar</code> mode when set</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PLANTUML_SRC</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>plantuml</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing versioned <code>.puml</code> source files</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PLANTUML_DEST</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>exported/svg-plantuml</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Output directory for rendered SVG files</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_asciidoctor_detection">6. AsciiDoctor detection</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The Makefile auto-detects how to invoke AsciiDoctor for the <code>docs-html</code> target. The resolution order is (first match wins):</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><code>$ASCIIDOCTOR_CMD</code> env var — explicit override, e.g. <code>asciidoctor</code> or <code>bundle exec asciidoctor</code></p>
-</li>
-<li>
-<p><code>asciidoctor</code> binary on <code>PATH</code> — installed via <code>zypper install asciidoctor</code>, <code>gem install asciidoctor</code>, or equivalent</p>
-</li>
-<li>
-<p>Container <code>asciidoctor/docker-asciidoctor</code> — pulled on demand via the detected container runtime</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>Override examples:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">ASCIIDOCTOR_CMD="bundle exec asciidoctor" make docs-html
-ASCIIDOCTOR_CMD="docker run --rm -v $(pwd):/documents asciidoctor/docker-asciidoctor asciidoctor" make docs-html</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>The source and destination directories can also be overridden:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">ADOC_DEST=exported/my-html make docs-html</code></pre>
-</div>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 20%;">
-<col style="width: 40%;">
-<col style="width: 40%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Variable</th>
-<th class="tableblock halign-left valign-top">Default</th>
-<th class="tableblock halign-left valign-top">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ASCIIDOCTOR_CMD</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><em>(auto-detected)</em></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Full command used to invoke AsciiDoctor</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ADOC_SRC</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>.</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing <code>.adoc</code> source files (relative to the Makefile)</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ADOC_DEST</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>exported/html</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Output directory for rendered HTML files</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ADOC_ATTRS</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>-a toc -a toclevels=3 -a sectnums -a icons=font -a data-uri</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">AsciiDoctor attributes passed to every invocation; <code>-a data-uri</code> embeds images as base64 so the HTML is fully self-contained</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ADOC_MAIN</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>resource_portal.adoc</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Main document (renders with all includes resolved)</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ADOC_STANDALONE</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">context, container, component, makefile docs</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Individual documents also rendered standalone</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_typical_workflow">7. Typical workflow</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code>1.  Edit  workspace/workspace.dsl  in your editor
-          (VS Code + Structurizr extension recommended)
-
-2.  Refresh  http://127.0.0.1:8080  -&gt; changes appear immediately
-
-3.  Adjust the layout in the UI by dragging elements
-          -&gt; Structurizr saves positions automatically to workspace.json
-
-4.  make export              -&gt; produces all Structurizr export formats
-    make export-plantuml-svg -&gt; exports PlantUML sources and renders them to SVG
-
-5.  git add workspace/workspace.dsl workspace/workspace.json
-    git commit -m "update architecture"</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_export_formats">8. Export formats</h2>
-<div class="sectionbody">
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 20%;">
-<col style="width: 40%;">
-<col style="width: 40%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Format</th>
-<th class="tableblock halign-left valign-top">Command</th>
-<th class="tableblock halign-left valign-top">Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PNG</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-png</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Requires <code>-playwright</code> tag; UI-faithful</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">SVG</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-svg</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Requires <code>-playwright</code> tag; ideal for docs</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PlantUML</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-plantuml</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Standard + C4 variant</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Mermaid</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-mermaid</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Native GitHub, GitLab, MkDocs support</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">DOT</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-text</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Graphviz, precise layout control</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Ilograph</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-text</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Interactive visualisation</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">JSON</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-text</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Full serialised workspace</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Static</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-static</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Offline-navigable HTML site</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">HTML (AsciiDoc)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make docs-html</code> or <code>make docs</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Renders all <code>.adoc</code> sources to <code>exported/html/</code>; images embedded as data URIs (self-contained); AsciiDoctor auto-detected</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PlantUML → SVG</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make plantuml-svg</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Renders versioned <code>.puml</code> files in <code>plantuml/</code> to SVG; PlantUML auto-detected</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PlantUML export + SVG</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export-plantuml-svg</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Runs <code>export-plantuml</code> then <code>plantuml-svg</code> in sequence</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>All</strong></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>make export</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Runs all Structurizr export formats (does not include <code>plantuml-svg</code>)</p></td>
-</tr>
-</tbody>
-</table>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-note" title="Note"></i>
-</td>
-<td class="content">
-<code>make export</code> covers all Structurizr-exported formats. The <code>plantuml-svg</code> target operates on the versioned <code>.puml</code> files in <code>plantuml/</code> and is a separate step — run <code>make export-plantuml-svg</code> to do both in one command.
-</td>
-</tr>
-</table>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_using_diagrams_in_asciidoc">9. Using diagrams in AsciiDoc</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-asciidoc" data-lang="asciidoc">// After make export-svg:
-image::../design/exported/svg/structurizr-SystemContext.svg[System Context,opts=inline]
-image::../design/exported/svg/structurizr-Containers.svg[Containers,opts=inline]
-
-// After make plantuml-svg:
-image::../design/exported/svg-plantuml/seq_submission.svg[Submission sequence,opts=inline]</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_using_diagrams_in_markdown">10. Using diagrams in Markdown</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-markdown" data-lang="markdown">&lt;!-- After make export-svg: --&gt;
-![System Context](../design/exported/svg/structurizr-SystemContext.svg)
-
-&lt;!-- After make plantuml-svg: --&gt;
-![Submission sequence](../design/exported/svg-plantuml/seq_submission.svg)</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_what_to_commit">11. What to commit</h2>
-<div class="sectionbody">
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 50%;">
-<col style="width: 25%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">File</th>
-<th class="tableblock halign-left valign-top">Role</th>
-<th class="tableblock halign-left valign-top">Commit?</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>workspace/workspace.dsl</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Model: elements, relationships, views</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">✅ Always</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>workspace/workspace.json</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Diagram layout (element positions)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">✅ Always</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>plantuml/*.puml</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Versioned PlantUML source diagrams</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">✅ Always</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>exported/*</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Generated artefacts</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">❌ Never — use <code>make export</code> / <code>make plantuml-svg</code></p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p><code>workspace.json</code> does not contain the model (that lives in the DSL) — it only stores the X/Y coordinates of elements in the UI. Without it, every restart falls back to autolayout and all manual positioning is lost.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_updating_the_container_image">12. Updating the container image</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash"># Check the latest tag at https://hub.docker.com/r/structurizr/structurizr/tags
-# Update the tag in docker-compose.yml, then:
-make down
-# edit docker-compose.yml with the new tag
-make up</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_available_commands">13. Available commands</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code>make up                  Start Structurizr
-make down                Stop Structurizr
-make open                Open http://127.0.0.1:8080
-make export              Export all Structurizr formats (PNG, SVG, PlantUML, Mermaid, DOT, Ilograph, JSON, Static)
-make export-svg          SVG only
-make export-png          PNG only
-make export-text         PlantUML + Mermaid + DOT + Ilograph + JSON
-make export-static       Static site
-make export-plantuml     PlantUML only (C4 style)
-make export-mermaid      Mermaid only (for GitHub / GitLab / MkDocs)
-make plantuml-svg        Render versioned .puml files → SVG (uses plantuml binary, JAR, or container)
-make export-plantuml-svg Export PlantUML sources then render them to SVG
-make docs                Render AsciiDoc sources → HTML (alias for docs-html)
-make docs-html           Render .adoc files → exported/html/  (AsciiDoctor auto-detected)
-make logs                Follow container logs
-make status              Container status
-make clean               Remove exported/
-make podman-setup        Print Podman one-time setup instructions (openSUSE / rootless)
-make help                Show detected runtime/compose and list all targets</code></pre>
-</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">API</dt>
+<dd>
+<p>Application Programming Interface.
+In this document, "the API server" or "the Kubernetes API" refers to the kube-apiserver — the gateway through which all reads and writes to cluster state flow, including CRD operations performed by the Web App and the Approval Controller.</p>
+</dd>
+<dt class="hdlist1">C4</dt>
+<dd>
+<p>Context, Container, Component, Code.
+A hierarchical architecture diagramming framework by Simon Brown.
+The Resource Portal documentation covers three of the four levels: System Context (who interacts with the system and what it depends on), Container (the deployable runtime units and CRDs inside the system), and Component (the internal packages and logical modules within each container).</p>
+</dd>
+<dt class="hdlist1">CEL</dt>
+<dd>
+<p>Common Expression Language.
+A Google-developed expression language embedded in Kubernetes since v1.25 for writing validation rules directly in CRD schemas (<code>x-kubernetes-validations</code>).
+Used in this system to enforce field immutability on governance fields in <code>ResourceRequest</code> (e.g. <code>spec.approvalStages</code>, <code>spec.action</code>) and to validate enum values for <code>status.phase</code>, and to enforce structural constraints on <code>ResourceCatalogue</code> (e.g. <code>instanceNamePrefix</code> length, <code>requiredApprovals ≥ 1</code>, <code>teamClaim</code> required when <code>perTeam</code> is present).</p>
+</dd>
+<dt class="hdlist1">CR</dt>
+<dd>
+<p>Custom Resource.
+An instance of a CRD — a specific object stored in etcd whose schema is defined by the CRD, not by Kubernetes core.
+In this system: a <code>ResourceRequest</code>, <code>ProvisionedResource</code>, or <code>ResourceCatalogue</code> object is a CR.</p>
+</dd>
+<dt class="hdlist1">CRD</dt>
+<dd>
+<p>Custom Resource Definition.
+A Kubernetes extension mechanism that registers a new resource type with the API server.
+The portal defines three CRDs on the management cluster (<code>ResourceRequest</code>, <code>ProvisionedResource</code>, <code>ResourceCatalogue</code>) and depends on per-resource-type CRDs on target clusters (the <em>CRD target instances</em>).</p>
+</dd>
+<dt class="hdlist1">DAG</dt>
+<dd>
+<p>Directed Acyclic Graph.
+A graph in which edges have a direction and no path leads back to the same node.
+Used to describe the <code>approvalPolicy.stages</code> dependency model in <code>ResourceCatalogue</code>: each stage may declare <code>dependsOn</code> references to earlier stages, forming a graph of parallel and sequential approval requirements.
+The design enforces acyclicity structurally (a stage may only reference stages appearing earlier in the YAML list) rather than through runtime graph traversal.</p>
+</dd>
+<dt class="hdlist1">DFS</dt>
+<dd>
+<p>Depth-First Search.
+A graph traversal algorithm that visits each node by recursively following unvisited edges before backtracking.
+Evaluated and explicitly rejected as the mechanism for cycle detection in the approval stage DAG.
+The structural ordering constraint makes DFS unnecessary.</p>
+</dd>
+<dt class="hdlist1">DNS</dt>
+<dd>
+<p>Domain Name System.
+The naming system for networked hosts.
+Kubernetes enforces DNS label limits (maximum 63 characters per segment, 253 characters total) on object names.
+The <code>instanceNamePrefix</code> in <code>ResourceCatalogue</code> must satisfy <code>len(instanceNamePrefix) + 36 ≤ 63</code> to keep the resulting CRD target instance name within this limit.</p>
+</dd>
+<dt class="hdlist1">etcd</dt>
+<dd>
+<p>A distributed, strongly consistent key-value store used by Kubernetes as its backing store.
+All cluster state — including CRD objects — is persisted in etcd.
+"Three CRDs, all on the management cluster" means etcd on the management cluster is the single source of truth for all portal state; there is no separate portal database.</p>
+</dd>
+<dt class="hdlist1">GC</dt>
+<dd>
+<p>Garbage Collection.
+The Kubernetes mechanism that deletes objects with no remaining owner references.
+In this system, the Approval Controller removes the <code>portal.example.com/deprovisioning</code> finalizer from a <code>ProvisionedResource</code> only after the downstream CRD target instance is confirmed absent; once the finalizer is removed, Kubernetes GC deletes the <code>ProvisionedResource</code> object.</p>
+</dd>
+<dt class="hdlist1">GVR</dt>
+<dd>
+<p>Group / Version / Resource.
+The three-part Kubernetes identifier for a resource type (e.g. <code>apps / v1 / deployments</code>).
+<code>ProvisionedResource.spec.targetRef</code> carries the GVR of the CRD target instance on the downstream cluster alongside its namespace and name, so the Approval Controller can address the correct API endpoint without additional discovery.</p>
+</dd>
+<dt class="hdlist1">HTTP / HTTPS</dt>
+<dd>
+<p>HyperText Transfer Protocol (Secure).
+All traffic between users and the Web Application uses HTTPS.
+<code>HTTP</code> in sequence diagrams refers to the internal HTTP Handler component within the Web App process, not the transport protocol itself.</p>
+</dd>
+<dt class="hdlist1">OIDC</dt>
+<dd>
+<p>OpenID Connect.
+An identity layer built on top of OAuth 2.0.
+The Web App uses the OIDC authorization code flow to authenticate users against the Identity Provider (Keycloak or any compatible SSO).
+The <code>requester</code> identity and team OIDC claims written into a <code>ResourceRequest</code> are extracted from the OIDC ID token at submission time.
+Group membership for approval routing is also checked via OIDC: the <code>groupsClaim</code> field in <code>ResourceCatalogue.spec.approvalPolicy</code> names the specific claim (e.g. <code>"groups"</code>, <code>"roles"</code>) whose values are compared against the group identifiers stored in <code>ResourceRequest.spec.approvalStages[].resolvedGroups</code> at approval time.</p>
+</dd>
+<dt class="hdlist1">PVC</dt>
+<dd>
+<p>PersistentVolumeClaim.
+A Kubernetes resource that requests storage.
+Mentioned as an example of a <em>derived object</em> — a resource that a CRD target controller may create from a CRD target instance.
+The Approval Controller never reads, writes, or deletes PVCs or any other derived objects; that is the exclusive responsibility of the CRD target controller.</p>
+</dd>
+<dt class="hdlist1">RBAC</dt>
+<dd>
+<p>Role-Based Access Control.
+The Kubernetes authorization model that governs which identities can perform which verbs on which resources.
+Two RBAC identities are used in this system: the logged-in user&#8217;s identity (via Rancher) for management-cluster write operations, and the controller service account with narrow RBAC on target clusters for provisioning.</p>
+</dd>
+<dt class="hdlist1">SA</dt>
+<dd>
+<p>Service Account.
+A non-human Kubernetes identity associated with a pod or controller.
+In sequence diagrams, "controller SA" refers to the Approval Controller&#8217;s dedicated Kubernetes service account, which holds the narrow RBAC permissions required to apply and delete CRD target instances on downstream clusters via Rancher.</p>
+</dd>
+<dt class="hdlist1">SMTP</dt>
+<dd>
+<p>Simple Mail Transfer Protocol.
+The protocol used by the Notifier to deliver state-change email notifications to requesters via the Mail Relay.
+The Mail Relay is a dumb relay — it has no knowledge of portal state and performs no retry logic; retry and backoff are handled by the Notifier.</p>
+</dd>
+<dt class="hdlist1">SPA</dt>
+<dd>
+<p>Single Page Application.
+A frontend architecture in which a JavaScript application running in the browser manages routing and rendering.
+The Web App is explicitly <em>not</em> an SPA: it is a server-side rendered monolith.
+There is no separate frontend bundle.</p>
+</dd>
+<dt class="hdlist1">SSA</dt>
+<dd>
+<p>Server-Side Apply.
+A Kubernetes API mechanism (stable since v1.22) in which the API server, rather than the client, is responsible for merging changes and tracking field ownership per field manager name.
+SSA is used throughout this system: the Approval Controller applies CRD target instances via SSA to declare ownership of configuration-significant fields; CRD target controllers apply all derived objects via SSA to prevent out-of-band modification; and the Approval Controller uses SSA for all status patches to avoid partial-update races.
+A field owned by one field manager cannot be patched by another without <code>--force</code>, which makes out-of-band modification of controlled fields fail immediately and visibly.</p>
+</dd>
+<dt class="hdlist1">SSO</dt>
+<dd>
+<p>Single Sign-On.
+A session and user authentication framework that allows a user to log in once and access multiple systems.
+In this architecture, the Identity Provider (e.g. Keycloak) acts as the SSO service shared by the Web App and Rancher.</p>
+</dd>
+<dt class="hdlist1">UID</dt>
+<dd>
+<p>Unique Identifier.
+The immutable, globally unique identifier assigned by the Kubernetes API server to every object at creation time.
+UIDs are used in this system as stable cross-references that survive name changes and namespace moves.
+The <code>targetRef.uid</code> in a <code>ResourceRequest</code> ensures the controller acts on the correct <code>ProvisionedResource</code> even if another object later reuses the same name.
+CRD target instance names on downstream clusters are derived from the UID of the originating <code>create</code> <code>ResourceRequest</code>.</p>
+</dd>
+<dt class="hdlist1">UUID</dt>
+<dd>
+<p>Universally Unique Identifier.
+A 128-bit identifier represented as 32 hexadecimal characters in the 8-4-4-4-12 format (e.g. <code>550e8400-e29b-41d4-a716-446655440000</code>), 36 characters in total including hyphens.
+Kubernetes UIDs are UUIDs.
+The 36-character UUID length is the basis for the constraint <code>len(instanceNamePrefix) + 36 ≤ 63</code> that governs CRD target instance naming.</p>
+</dd>
+<dt class="hdlist1">VCS</dt>
+<dd>
+<p>Version Control System.
+A system for tracking changes to files over time, typically Git.
+Approval workflow is native to the portal, not implemented as a pull request gate or external VCS integration.
+This is a deliberate design decision documented in the Context diagram.</p>
+</dd>
+<dt class="hdlist1">YAML</dt>
+<dd>
+<p>YAML Ain&#8217;t Markup Language (recursive acronym).
+The human-readable data serialization format used for Kubernetes manifests, CRD definitions, and resource objects.
+<code>ResourceCatalogue</code> entries, including the <code>approvalPolicy</code> stages and <code>parameterSchema</code>, are authored as YAML and stored as structured data in etcd.</p>
+</dd>
+</dl>
 </div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-06-14 19:14:07 UTC
+Last updated 2026-06-28 06:32:51 UTC
 </div>
 </div>
 </body>

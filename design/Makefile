@@ -94,14 +94,14 @@ endif
 #   ASCIIDOCTOR_CMD="bundle exec asciidoctor" make docs-html
 #   ASCIIDOCTOR_CMD="docker run --rm -v \$$(pwd):/work asciidoctor/docker-asciidoctor asciidoctor" make docs-html
 #
-# The HTML output lands in exported/html/ — one file per .adoc source.
+# The HTML output lands in html/ — one file per .adoc source.
 # The top-level resource_portal.adoc (which includes the others) is built as
 # the main document; individual sub-documents are also built standalone.
 
 # Source directory for .adoc files (relative to the Makefile)
 ADOC_SRC     ?= .
 # Destination for rendered HTML files
-ADOC_DEST    ?= exported/html
+ADOC_DEST    ?= html
 # Attributes passed to every asciidoctor invocation
 ADOC_ATTRS   ?= -a toc -a toclevels=3 -a sectnums -a icons=font -a data-uri
 
@@ -323,8 +323,8 @@ docs-html: ## Render .adoc files → exported/html/  (images embedded as data UR
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
 clean: ## Remove all exported files (SVG, PNG, PlantUML, HTML, …)
-	rm -rf exported/
-	@echo "exported/ directory removed."
+	rm -rf exported/ html/
+	@echo "exported/ and html/ directories removed."
 
 help: ## Show this help
 	@echo ""
