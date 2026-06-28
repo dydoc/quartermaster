@@ -33,6 +33,7 @@ end box
 
 participant "Identity\nProvider" as IDP    #F1EFE8
 participant "ResourceCatalogue\nCRD" as CAT    #E8F4FD
+participant "Rancher\nCluster API" as RCH    #E8F4FD
 participant "ProvisionedResource\nCRD" as PRCRD  #E8F4FD
 participant "ResourceRequest\nCRD" as RRCRD  #E8F4FD
 
@@ -46,7 +47,7 @@ group Failure path — unauthenticated
     HTTP --> USR  : 302 redirect to IdP login
 end
 
-OIDC --> HTTP : identity (username, groups)
+OIDC --> HTTP : identity (username, groupsClaim values)
 
 == Catalogue lookup & parameter validation ==
 
@@ -59,7 +60,8 @@ group Failure path — resource type not found
     HTTP --> USR  : 404 Resource type not available
 end
 
-CAT  --> SUB  : schema, quotas, routing rule
+CAT  --> SUB  : displayName, schema, clusterSelector,\nquota, approvalPolicy
+
 SUB  -> SUB   : validate parameters against schema
 
 group Failure path — validation error
@@ -72,6 +74,25 @@ SUB  -> SUB   : check quota against\nexisting ProvisionedResources
 group Failure path — quota exceeded
     SUB  --> HTTP : quota exceeded
     HTTP --> USR  : 403 Quota exceeded for this resource type
+end
+
+== Cluster selection (create only) ==
+
+alt action = create
+    SUB  -> RCH   : list clusters matching clusterSelector
+
+    group Failure path — no eligible cluster
+        RCH  --> SUB  : empty list
+        SUB  --> HTTP : error
+        HTTP --> USR  : 400 No eligible cluster for this resource type
+    end
+
+    RCH  --> SUB  : matching clusters
+
+    note over SUB
+        1 match  → auto-selected
+        N matches → user selects from submission form
+    end note
 end
 
 == Concurrency check (update / delete only) ==
@@ -98,22 +119,33 @@ end
 
 == Approver resolution ==
 
-SUB  -> RES   : resolve(routing rule, identity)
-RES  -> IDP   : expand LDAP groups (if needed)
+SUB  -> RES   : resolve(approvalPolicy, selectedCluster)
 
-group Failure path — LDAP unavailable
-    IDP  --> RES  : timeout / error
-    RES  --> SUB  : resolution failed
-    SUB  --> HTTP : error
-    HTTP --> USR  : 503 Approver resolution temporarily unavailable\nPlease retry
+note over RES
+    For each stage:
+    • idpGroup  → copy values to resolvedGroups
+    • explicitUsers → copy values to resolvedUsers
+    • teamLabel → read cluster label at labelKey,
+                  apply groupClaimTemplate if set,
+                  validate against values allowlist
+end note
+
+alt teamLabel present in any stage
+    RES  -> RCH   : get cluster object (selectedCluster)
+    RCH  --> RES  : cluster labels
+
+    group Failure path — cluster label missing or not in allowlist
+        RES  --> SUB  : resolution failed
+        SUB  --> HTTP : error
+        HTTP --> USR  : 400 Cluster does not carry a valid team label
+    end
 end
 
-IDP  --> RES  : group members
-RES  --> SUB  : concrete approver list
+RES  --> SUB  : per-stage resolvedGroups and resolvedUsers
 
 == Write ResourceRequest ==
 
-SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\napprovalPolicy snapshot, approvers list,\nrequester identity)
+SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\npreviousGeneration, targetCluster, targetCRD,\napprovalPolicy snapshot, approvalStages,\nrequester identity)
 
 group Failure path — API server error
     RRCRD --> SUB : error (conflict / server error)

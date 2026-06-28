@@ -24,7 +24,7 @@ The Resource Portal documentation covers three of the four levels: System Contex
 CEL::
 Common Expression Language.
 A Google-developed expression language embedded in Kubernetes since v1.25 for writing validation rules directly in CRD schemas (`x-kubernetes-validations`).
-Used in this system to enforce field immutability on governance fields in `ResourceRequest` (e.g. `spec.approvers`, `spec.action`) and to validate enum values for `status.phase`.
+Used in this system to enforce field immutability on governance fields in `ResourceRequest` (e.g. `spec.approvalStages`, `spec.action`) and to validate enum values for `status.phase`, and to enforce structural constraints on `ResourceCatalogue` (e.g. `instanceNamePrefix` length, `requiredApprovals ≥ 1`, `teamClaim` required when `perTeam` is present).
 
 CR::
 Custom Resource.
@@ -74,17 +74,12 @@ HyperText Transfer Protocol (Secure).
 All traffic between users and the Web Application uses HTTPS.
 `HTTP` in sequence diagrams refers to the internal HTTP Handler component within the Web App process, not the transport protocol itself.
 
-LDAP::
-Lightweight Directory Access Protocol.
-A protocol for querying directory services such as Active Directory.
-The Approver Resolver uses LDAP to expand group-type approval routing rules into concrete user identity lists at submission time.
-LDAP is not consulted at reconcile time; the expanded list is embedded in the `ResourceRequest` at submission.
-
 OIDC::
 OpenID Connect.
 An identity layer built on top of OAuth 2.0.
 The Web App uses the OIDC authorization code flow to authenticate users against the Identity Provider (Keycloak or any compatible SSO).
 The `requester` identity and team OIDC claims written into a `ResourceRequest` are extracted from the OIDC ID token at submission time.
+Group membership for approval routing is also checked via OIDC: the `groupsClaim` field in `ResourceCatalogue.spec.approvalPolicy` names the specific claim (e.g. `"groups"`, `"roles"`) whose values are compared against the group identifiers stored in `ResourceRequest.spec.approvalStages[].resolvedGroups` at approval time.
 
 PVC::
 PersistentVolumeClaim.

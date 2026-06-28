@@ -25,7 +25,7 @@ The Web Application is a monolith that serves all HTTP traffic. It is server-sid
 
 At startup the Web App launches a **informer** for both `ResourceRequest` and `ProvisionedResource` objects. The informer maintains a local in-memory cache kept in sync by the Kubernetes watch mechanism. When a user navigates to their resource list, the Web App reads directly from that cache — no polling, no per-request API calls to the cluster.
 
-At submission time the Web App is responsible for **resolving the approver list**: it reads the relevant `ResourceCatalogue` entry, evaluates the approval routing rule (which may reference LDAP groups, team labels, or explicit user lists), expands it into a concrete list of approver identities, and embeds that list in the `ResourceRequest` it writes. The Approval Controller consumes the list as data — it never re-evaluates routing rules itself.
+At submission time the Web App is responsible for **resolving the approval data**: it reads the relevant `ResourceCatalogue` entry, evaluates the multi-stage approval policy (which may reference IdP groups, team labels, or explicit user lists), and populates per-stage group identifiers and user identities via the Approver Resolver. The Approval Controller consumes this data as structured state — it never re-evaluates routing rules or queries any identity service itself.
 
 === Approval Controller
 
@@ -74,16 +74,25 @@ Fields carried by a `ResourceRequest`:
 
 * `spec.action` — `create` | `update` | `delete`
 * `spec.targetRef.name` / `spec.targetRef.uid` — present for `update` and `delete`
-* `spec.resourceType` — references a `ResourceCatalogue` entry
+* `spec.resourceType` — references a `ResourceCatalogue` entry by name
+* `spec.targetCluster` — name of the target cluster resolved from `ResourceCatalogue.spec.clusterSelector` at submission time; the controller addresses the downstream cluster directly from this field without reading the catalogue
+* `spec.targetCRD` — snapshot of `{group, version, kind, instanceNamePrefix}` from `ResourceCatalogue` at submission time; the controller uses the GVK to construct and apply the CRD target instance
 * `spec.parameters` — the desired configuration
 * `spec.previousParameters` — snapshot of current configuration at submission time (update only)
 * `spec.previousGeneration` — `generation` of the `ProvisionedResource` at snapshot time; used by the controller to detect stale rollback targets (update only). `generation` increments only on spec writes, not status patches, so Health Observer updates do not cause false positives
-* `spec.approvalPolicy` — snapshot of the policy from `ResourceCatalogue` at submission time
-* `spec.approvers` — pre-resolved list of required approver identities; immutable after creation via CEL validation rule
+* `spec.approvalPolicy` — full snapshot of `ResourceCatalogue.spec.approvalPolicy` at submission time, including all stage definitions, `dependsOn` relationships, and `groupsClaim`; the controller evaluates the DAG from this snapshot without reading the catalogue
+* `spec.approvalStages[]` — per-stage resolved approval data, populated at submission time by the Approver Resolver:
+** `.name` — stage name from the policy
+** `.resolvedGroups[]` — OIDC group identifiers for this stage: copied directly from `idpGroup` entries; resolved from the target cluster's label (and optionally transformed via `groupClaimTemplate`) for `teamLabel` entries; checked against the logged-in user's `groupsClaim` at approval time
+** `.resolvedUsers[]` — individual user identity strings for this stage, sourced from `explicitUsers` entries; checked against the logged-in user's OIDC `email` or `sub` at approval time
+** `.requiredApprovals` — minimum number of distinct user approvals to complete this stage
 * `spec.requester` — identity of the user who submitted the request, extracted from the OIDC token at submission time; used by the Notifier to address state-change emails; immutable after creation
 * `status.phase` — `pending` → `approved` / `rejected` → `provisioning` → `provisioned` / `rolling_back` → `failed` / `rollback_failed`
 * `status.notificationSent` — boolean set by the Notifier after a notification is successfully delivered; prevents duplicate notifications on controller restart
-* `status.decisions` — one entry per approver action, with identity and timestamp
+* `status.approvalStages[]` — per-stage approval state:
+** `.name` — stage name
+** `.state` — `pending` | `active` | `completed` | `rejected`
+** `.decisions[]` — one entry per approve/reject action: `{approver, timestamp, action: approve|reject}`
 * `status.failureReason` — populated on `failed` and `rollback_failed`
 +
 NOTE: `provisioned` is the terminal success phase for all three action types. For `create` and `update` it means the resource is operational on the target cluster. For `delete` it means the deprovisioning action completed successfully — the resource no longer exists. The same phase name is used deliberately: it signals that the _request_ reached its intended terminal state, regardless of what that state implies for the resource's existence.
@@ -124,7 +133,120 @@ This allows the Approval Controller to list all `ResourceRequest` objects that r
 
 === ResourceCatalogue CRD
 
-`ResourceCatalogue` defines what resources are available for request. Each entry describes a resource type (name, schema, target cluster scope), the quota limits that apply, and the approval routing rule (which group or identity must approve requests of this type). Platform Admins manage these objects through the Web App's administration interface. The Web App reads the catalogue at submission time to validate the request and resolve the approver list.
+`ResourceCatalogue` defines what resources are available for request. It is cluster-scoped, has no `status` subresource, and has no controller loop — it is pure admin-written configuration. The Web App reads it on demand via direct API calls (not the informer cache) because it is low-frequency, admin-written, and consulted only at submission time. The Approval Controller never reads it.
+
+==== Fields
+
+`spec.displayName`::
+Human-readable name shown in the catalogue browsing UI. Required.
+
+`spec.description`::
+Optional longer description shown to End Users at submission time.
+
+`spec.targetCRD`::
+The CRD type to provision on target clusters. All sub-fields are required.
++
+* `group`, `version`, `kind` — GVK of the CRD target instance on the downstream cluster
+* `instanceNamePrefix` — prefix prepended to the UID of the originating `create` `ResourceRequest` to form the target instance name. CEL constraint: `size(instanceNamePrefix) + 36 ≤ 63` (Kubernetes DNS label limit). The prefix should include the separator character (e.g. `"ns-"`, not `"ns"`).
++
+Snapshotted into `ResourceRequest.spec.targetCRD` at submission time.
+
+`spec.clusterSelector`::
+Standard Kubernetes `LabelSelector`. Used exclusively at submission time by the Submission Handler to find eligible Rancher cluster objects.
++
+* Zero matches → submission fails with a user-facing error
+* One match → target cluster auto-selected
+* Multiple matches → user selects from the submission form
++
+The selected cluster name is written to `ResourceRequest.spec.targetCluster`. `clusterSelector` is never snapshotted. The controller uses the concrete cluster name in the `ResourceRequest` directly.
+
+`spec.parameterSchema`::
+An embedded OpenAPI v3 schema defining the parameters an End User may submit. Cross-field validation uses `x-kubernetes-validations` CEL rules within the schema. The field uses `x-kubernetes-preserve-unknown-fields: true` in the CRD definition because the schema structure cannot be predicted at CRD definition time.
++
+Snapshotted in full into `ResourceRequest.spec.parameterSchema` at submission time for audit.
+
+`spec.quota`::
+Optional. Both `perUser` and `perTeam` are independently optional.
++
+* `perUser.maxActive` — max `ResourceRequest` objects in non-terminal phase per user per resource type
+* `perUser.maxProvisioned` — max `ProvisionedResource` objects per user per resource type
+* `perTeam.teamClaim` — required when `perTeam` is present; OIDC claim name that identifies the user's team; must resolve to a single string value (multi-valued claim → submission fails with a clear error)
+* `perTeam.maxActive` / `perTeam.maxProvisioned` — same limits at team level
++
+Quota checks are performed by the Submission Handler reading the informer cache at submission time (soft enforcement — see Key Design Decisions). Not snapshotted.
+
+`spec.approvalPolicy`::
+The multi-stage approval policy governing who must approve requests of this type. Snapshotted in full into `ResourceRequest.spec.approvalPolicy` at submission time.
++
+* `groupsClaim` — required when any stage uses a group-type approver. The OIDC claim name whose values are checked for group membership at approval time (e.g. `"groups"`, `"roles"`). Configurable per catalogue entry because claim names vary across IdP configurations.
+* `stages[]` — ordered list of approval stages forming a DAG. A stage with an empty `dependsOn` list becomes active immediately on submission. A stage becomes active only when all stages in its `dependsOn` list reach `completed` state. All stages must complete for the overall request to be approved.
++
+Each stage:
++
+** `name` — unique within the catalogue; pattern `[a-z][a-z0-9-]*`; appears in `status.approvalStages` and is visible to users in the portal
+** `dependsOn[]` — names of stages that must complete before this stage activates. A stage may only reference stages that appear earlier in the YAML list — the structural ordering constraint that prevents DAG cycles without graph traversal
+** `requiredApprovals` — minimum number of distinct user approvals (N-of-M) to complete this stage; minimum 1
+** `approvers[]` — one or more approver entries merged into a single pool per stage. Three types:
++
+`type: idpGroup` with `values: []string` (required, min 1);;
+OIDC group identifiers. Membership is checked against the logged-in user's `groupsClaim` at the moment of the approval action. No group expansion is performed at submission.
++
+`type: explicitUsers` with `values: []string` (required, min 1);;
+Individual user identity strings in the same format as the OIDC `email` or `sub` claim used throughout the system.
++
+`type: teamLabel`;;
+Reads the label at `labelKey` (optional; default `"portal.example.com/team"`) from the Rancher cluster object for the selected target cluster and records the value as a group identifier for this stage.
+Optional `groupClaimTemplate`: a template string using `{team}` as a placeholder, applied to the label value to produce the final group identifier (e.g. `"cn={team},ou=groups,dc=example,dc=com"` for environments where the OIDC `groupsClaim` carries full DNs but cluster labels carry only the team name).
+Optional `values`: allowlist of valid label values; if non-empty, a label value absent from the list causes this approver entry to contribute zero identities to the stage pool.
+
+==== What is and is not snapshotted into ResourceRequest
+
+The Approval Controller is designed to never read `ResourceCatalogue`. Everything it needs is in the `ResourceRequest`.
+
+[cols="3,2,3", options="header"]
+|===
+| Field
+| Treatment
+| Rationale
+
+| `spec.approvalPolicy`
+| Snapshotted in full
+| Controller evaluates the DAG without reading the catalogue; historical requests reflect the policy at submission time
+
+| `spec.parameterSchema`
+| Snapshotted in full
+| Audit trail; the schema in effect at submission is permanently recorded
+
+| `spec.targetCRD`
+| Snapshotted in full
+| Controller needs the GVK to apply the CRD target instance
+
+| Resolved target cluster
+| Written as a concrete name to `ResourceRequest.spec.targetCluster`
+| Controller addresses the downstream cluster by name; the selector is consumed at submission
+
+| `spec.clusterSelector`
+| Not snapshotted
+| Consumed fully at submission; not needed downstream
+
+| `spec.quota`
+| Not snapshotted
+| Checked live against informer cache at submission time only
+
+| `spec.displayName` / `spec.description`
+| Not snapshotted
+| UI metadata only; not needed by the controller
+|===
+
+==== Admission webhook
+
+A `ValidatingAdmissionWebhook` enforces constraints on `ResourceCatalogue` objects that cannot be expressed in CEL schema validation alone:
+
+* Stage names are unique within the `stages` list
+* Every `dependsOn` entry names a stage that exists
+* Every `dependsOn` entry names a stage that appears earlier in the list (structural ordering constraint)
+
+Schema-level constraints (`instanceNamePrefix` length, `requiredApprovals ≥ 1`, `name` pattern, `teamClaim` required when `perTeam` is present) are enforced by CEL rules in the CRD definition itself.
 
 === Mail Relay
 
@@ -190,7 +312,7 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 **`rollback_failed` as a distinct terminal phase.** When rollback retries are exhausted the cluster state is genuinely unknown — the CRD target instance may be partially updated. Using `failed` for both "rollback confirmed" and "rollback failed" would hide this distinction from the operator. `rollback_failed` is a signal that manual intervention is required, not merely a retry.
 
-**CEL immutability on governance fields.** `spec.approvers`, `spec.approvalPolicy`, `spec.requester`, `spec.action`, and `spec.targetRef` on `ResourceRequest` are immutable after creation. This prevents any actor — including the Web App itself — from retroactively modifying the governance perimeter of an in-flight request.
+**CEL immutability on governance fields.** `spec.approvalStages`, `spec.approvalPolicy`, `spec.targetCluster`, `spec.targetCRD`, `spec.requester`, `spec.action`, and `spec.targetRef` on `ResourceRequest` are immutable after creation. This prevents any actor — including the Web App itself — from retroactively modifying the governance perimeter of an in-flight request.
 
 **`status.notificationSent` prevents duplicate notifications.** The Notifier sets this boolean after successful delivery. On controller restart, the Reconciler checks this field before invoking the Notifier, ensuring at-most-once delivery without external state. A notification that was in-flight at restart time may be lost (fire-and-forget semantics are preserved), but a completed transition is never re-notified.
 
@@ -202,7 +324,7 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 **Policy as data, not code.** The approval policy lives in `ResourceCatalogue` and is snapshotted into `ResourceRequest` at submission time. The Approval Controller is a pure state machine that never contains routing logic. Routing rules can be changed without redeploying the controller, and historical requests always reflect the policy that was in effect when they were submitted.
 
-**Pre-resolved approver list.** The Web App translates a routing rule into a list of concrete identities at submission time. The controller sees only a flat list — no LDAP lookups, no group expansion at reconcile time. This keeps the controller fast, testable, and independent of directory service availability.
+**Per-stage approval data resolved at submission; group membership checked live at approval.** The Approver Resolver is called once per submission and populates `spec.approvalStages` with OIDC group identifiers and individual user identities — no group expansion to a flat user list is performed. For `idpGroup` and `teamLabel` approvers, group membership is checked live against the logged-in user's current OIDC token at the moment they submit an approval decision. This means a user who loses group membership after submission immediately loses their approval right on pending requests — revoked access takes effect without waiting for a new submission. The Approval Controller never queries any identity service; it evaluates only stage state, decision counts, and the DAG structure from `spec.approvalPolicy`.
 
 **Informer, not polling.** The Web App uses a informer to maintain a live cache of `ResourceRequest` and `ProvisionedResource` objects. Status updates appear in the UI within the informer's resync period, driven by Kubernetes watch events, with no per-request API calls.
 
@@ -210,6 +332,6 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 **Failure is a first-class state.** `failed` and `rollback_failed` are terminal phases with a structured `failureReason`. The controller retries with backoff before reaching either. Once in a terminal phase, the request is immutable — a new request must be submitted. This avoids ambiguous partial-apply states.
 
-**Informer cache access control is application-layer, not RBAC-layer.** The Web App's `SharedInformer` uses the Web App's own service account for its single watch connection — it sees all `ResourceRequest` and `ProvisionedResource` objects. Per-user visibility is enforced in application code: the Status Handler filters objects by the requester identity stored in `spec.requester`; the Approver Handler filters by the logged-in user's identity against the pre-resolved `spec.approvers` list. Write operations (creating `ResourceRequest`, recording decisions) remain authenticated as the logged-in user via Rancher and produce per-user Kubernetes audit log entries. This split is a deliberate design choice: using a per-user watch connection would require a separate informer per active session, which does not scale. The application-layer filtering is the appropriate boundary here because the CRD objects carry no sensitive data beyond portal state — the security boundary that matters is the `create`/`patch` RBAC on the target clusters, which is enforced by the dual identity plane.
+**Informer cache access control is application-layer, not RBAC-layer.** The Web App's `SharedInformer` uses the Web App's own service account for its single watch connection — it sees all `ResourceRequest` and `ProvisionedResource` objects. Per-user visibility is enforced in application code: the Status Handler filters objects by the requester identity stored in `spec.requester`; the Approver Handler filters by whether the logged-in user is eligible for any active approval stage, checked against `spec.approvalStages[].resolvedUsers` and `spec.approvalStages[].resolvedGroups` (OIDC group claim check). Write operations (creating `ResourceRequest`, recording decisions) remain authenticated as the logged-in user via Rancher and produce per-user Kubernetes audit log entries. This split is a deliberate design choice: using a per-user watch connection would require a separate informer per active session, which does not scale. The application-layer filtering is the appropriate boundary here because the CRD objects carry no sensitive data beyond portal state — the security boundary that matters is the `create`/`patch` RBAC on the target clusters, which is enforced by the dual identity plane.
 
 **Quota enforcement is soft at submission time.** Quota checks are performed by the Submission Handler reading the informer cache immediately before writing the `ResourceRequest`. Two near-simultaneous `create` submissions from the same user could both observe the same cache state, both pass the quota check, and both succeed — the cache has a finite resync window and no per-submission write lock exists. There is no controller-side quota re-enforcement. This is an accepted trade-off: quota is a governance guardrail, not a security control, and the race window is narrow in practice. Operators requiring hard quota enforcement should add a validating admission webhook on `ResourceRequest` that counts existing objects at write time via the API server.
