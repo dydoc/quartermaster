@@ -3,7 +3,9 @@
   "description" : "C4 diagrams — Resource Portal v9. Self-service portal for infrastructure resources on Rancher-managed Kubernetes clusters. User identity governs management-cluster operations; the Approval Controller acts under its own service account on target clusters.",
   "documentation" : { },
   "id" : 1,
-  "lastModifiedDate" : "2026-06-07T01:57:53Z",
+  "lastModifiedAgent" : "structurizr/diagrams/39110f3b-9fda-4a59-9fde-675a89bb6f70",
+  "lastModifiedDate" : "2026-07-01T20:24:36Z",
+  "lastModifiedUser" : "807229817",
   "model" : {
     "people" : [ {
       "description" : "Requests and monitors infrastructure resources via the portal.",
@@ -15,13 +17,13 @@
       "relationships" : [ {
         "description" : "Requests resources and monitors status",
         "destinationId" : "6",
-        "id" : "13",
+        "id" : "14",
         "sourceId" : "1",
         "tags" : "Relationship"
       }, {
         "description" : "Browses catalogue, submits requests, monitors status [HTTPS]",
         "destinationId" : "7",
-        "id" : "19",
+        "id" : "20",
         "sourceId" : "1",
         "tags" : "Relationship"
       } ],
@@ -36,13 +38,13 @@
       "relationships" : [ {
         "description" : "Reviews and approves requests",
         "destinationId" : "6",
-        "id" : "14",
+        "id" : "15",
         "sourceId" : "2",
         "tags" : "Relationship"
       }, {
         "description" : "Reviews and approves/rejects requests [HTTPS]",
         "destinationId" : "7",
-        "id" : "20",
+        "id" : "21",
         "sourceId" : "2",
         "tags" : "Relationship"
       } ],
@@ -57,13 +59,13 @@
       "relationships" : [ {
         "description" : "Configures policies and resource catalogue",
         "destinationId" : "6",
-        "id" : "15",
+        "id" : "16",
         "sourceId" : "3",
         "tags" : "Relationship"
       }, {
         "description" : "Manages resource catalogue and policies [HTTPS]",
         "destinationId" : "7",
-        "id" : "21",
+        "id" : "22",
         "sourceId" : "3",
         "tags" : "Relationship"
       } ],
@@ -89,9 +91,21 @@
       "relationships" : [ {
         "description" : "Verifies user tokens via OIDC",
         "destinationId" : "4",
-        "id" : "17",
+        "id" : "18",
         "sourceId" : "5",
         "tags" : "Relationship"
+      }, {
+        "description" : "Calls synchronously on ResourceRequest CREATE (ValidatingWebhookConfiguration)",
+        "destinationId" : "12",
+        "id" : "31",
+        "sourceId" : "5",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Calls synchronously on ResourceRequest CREATE (ValidatingWebhookConfiguration)",
+        "destinationId" : "6",
+        "id" : "32",
+        "linkedRelationshipId" : "31",
+        "sourceId" : "5"
       } ],
       "tags" : "Element,Software System,PlatformInternal"
     }, {
@@ -106,32 +120,32 @@
         "relationships" : [ {
           "description" : "Authenticates session via OIDC",
           "destinationId" : "4",
-          "id" : "22",
+          "id" : "23",
           "sourceId" : "7",
           "tags" : "Relationship"
         }, {
           "description" : "Creates ResourceRequest; records approver decisions",
           "destinationId" : "9",
-          "id" : "23",
+          "id" : "24",
           "sourceId" : "7",
-          "tags" : "Relationship"
+          "tags" : "Relationship,WebAppCRD"
         }, {
           "description" : "Reads resource types and approval policy at submission time",
           "destinationId" : "11",
-          "id" : "24",
+          "id" : "25",
           "sourceId" : "7",
-          "tags" : "Relationship"
+          "tags" : "Relationship,WebAppCRD"
         }, {
           "description" : "Reads live state via informer cache (no polling)",
           "destinationId" : "10",
-          "id" : "25",
+          "id" : "26",
           "sourceId" : "7",
-          "tags" : "Relationship"
+          "tags" : "Relationship,WebAppCRD"
         } ],
         "tags" : "Element,Container,Container WebApp",
         "technology" : "HTTPS"
       }, {
-        "description" : "Kubernetes controller (controller-runtime). Drives the ResourceRequest state machine; applies CRD target instances on downstream clusters under its own service account via SSA. The Health Observer monitors CRD target instance health and restores out-of-band deletions. Derived object drift is corrected by the CRD target controller.",
+        "description" : "Kubernetes controller (controller-runtime). Drives the ResourceRequest state machine; applies CRD target instances on downstream clusters under its own service account via SSA. Polling-free: exits with RequeueAfter rather than blocking watch loops. The Health Observer monitors CRD target instance health and restores out-of-band deletions (audit-trail trade-off: see documentation). Derived object drift is corrected by the CRD target controller.",
         "documentation" : { },
         "id" : "8",
         "name" : "Approval Controller",
@@ -141,32 +155,32 @@
         "relationships" : [ {
           "description" : "Watches events; drives phase transitions",
           "destinationId" : "9",
-          "id" : "26",
+          "id" : "27",
           "sourceId" : "8",
-          "tags" : "Relationship"
+          "tags" : "Relationship,ControllerCRD"
         }, {
           "description" : "Creates/updates on confirmed provisioning; manages deprovisioning finalizer",
           "destinationId" : "10",
-          "id" : "27",
+          "id" : "28",
           "sourceId" : "8",
-          "tags" : "Relationship"
+          "tags" : "Relationship,ControllerCRD"
         }, {
           "description" : "Applies/deletes CRD target instances via SSA; Health Observer reads instance status read-only",
           "destinationId" : "5",
-          "id" : "28",
+          "id" : "29",
           "sourceId" : "8",
           "tags" : "Relationship"
         }, {
-          "description" : "Sends notification on provisioned / failed",
-          "destinationId" : "12",
-          "id" : "29",
+          "description" : "Sends notification on provisioned / failed / rollback_failed; at-most-once via status.notificationSent",
+          "destinationId" : "13",
+          "id" : "30",
           "sourceId" : "8",
           "tags" : "Relationship"
         } ],
         "tags" : "Element,Container,Container Controller",
         "technology" : "Go, controller-runtime"
       }, {
-        "description" : "Full lifecycle of a resource request: pending → approved/rejected → provisioning → provisioned/failed. Carries embedded approval policy, pre-resolved approver list, and previousParameters for update rollback. Critical spec fields are immutable via CEL rules.",
+        "description" : "Full lifecycle of a resource request: pending → approved/rejected → provisioning → provisioned/rolling_back → failed/rollback_failed. rolling_back is update-only and visible to End Users. Carries embedded approval policy, pre-resolved approver list, and previousParameters for update rollback. Critical spec fields are immutable via CEL rules.",
         "documentation" : { },
         "id" : "9",
         "name" : "ResourceRequest CRD",
@@ -196,9 +210,32 @@
         "tags" : "Element,Container,Container CRD",
         "technology" : "Kubernetes CRD (cluster: management)"
       }, {
-        "description" : "SMTP relay. Delivers state-change notifications to requesters on provisioned and failed transitions.",
+        "description" : "ValidatingAdmissionWebhook on ResourceRequest CREATE. Verifies approval policy snapshot, approver data, targetCRD, targetCluster, and requester identity against the ResourceCatalogue entry. failurePolicy: Fail.",
         "documentation" : { },
         "id" : "12",
+        "name" : "ResourceRequest Admission Webhook",
+        "properties" : {
+          "structurizr.dsl.identifier" : "admissionWebhook"
+        },
+        "relationships" : [ {
+          "description" : "Reads ResourceCatalogue entry to verify policy snapshot and field equality",
+          "destinationId" : "11",
+          "id" : "33",
+          "sourceId" : "12",
+          "tags" : "Relationship,WebhookCRD"
+        }, {
+          "description" : "Reads Rancher cluster objects to verify clusterSelector membership and teamLabel resolution",
+          "destinationId" : "5",
+          "id" : "34",
+          "sourceId" : "12",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Container Webhook",
+        "technology" : "Go, Kubernetes admission webhook"
+      }, {
+        "description" : "SMTP relay. Delivers state-change notifications to requesters on provisioned and failed transitions.",
+        "documentation" : { },
+        "id" : "13",
         "name" : "Mail Relay",
         "properties" : {
           "structurizr.dsl.identifier" : "mailRelay"
@@ -216,13 +253,13 @@
       "relationships" : [ {
         "description" : "Authenticates users via OIDC",
         "destinationId" : "4",
-        "id" : "16",
+        "id" : "17",
         "sourceId" : "6",
         "tags" : "Relationship"
       }, {
         "description" : "Web App reads cluster state as user; Controller applies CRD target instances as service account",
         "destinationId" : "5",
-        "id" : "18",
+        "id" : "19",
         "sourceId" : "6",
         "tags" : "Relationship"
       } ],
@@ -231,15 +268,16 @@
   },
   "name" : "Resource Portal",
   "properties" : {
-    "structurizr.inspection.error" : "20",
-    "structurizr.dsl" : "d29ya3NwYWNlICJSZXNvdXJjZSBQb3J0YWwiICJDNCBkaWFncmFtcyDigJQgUmVzb3VyY2UgUG9ydGFsIHY5LiBTZWxmLXNlcnZpY2UgcG9ydGFsIGZvciBpbmZyYXN0cnVjdHVyZSByZXNvdXJjZXMgb24gUmFuY2hlci1tYW5hZ2VkIEt1YmVybmV0ZXMgY2x1c3RlcnMuIFVzZXIgaWRlbnRpdHkgZ292ZXJucyBtYW5hZ2VtZW50LWNsdXN0ZXIgb3BlcmF0aW9uczsgdGhlIEFwcHJvdmFsIENvbnRyb2xsZXIgYWN0cyB1bmRlciBpdHMgb3duIHNlcnZpY2UgYWNjb3VudCBvbiB0YXJnZXQgY2x1c3RlcnMuIiB7CgogICAgbW9kZWwgewoKICAgICAgICAjIOKUgOKUgCBIdW1hbiBhY3RvcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgZW5kVXNlciA9IHBlcnNvbiAiRW5kIFVzZXIiICJSZXF1ZXN0cyBhbmQgbW9uaXRvcnMgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzIHZpYSB0aGUgcG9ydGFsLiIgewogICAgICAgICAgICB0YWdzICJBY3RvciIKICAgICAgICB9CgogICAgICAgIGFwcHJvdmVyID0gcGVyc29uICJBcHByb3ZlciIgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlc291cmNlIHJlcXVlc3RzIGJlZm9yZSBwcm92aXNpb25pbmcuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgcGxhdGZvcm1BZG1pbiA9IHBlcnNvbiAiUGxhdGZvcm0gQWRtaW4iICJDb25maWd1cmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGFzLCBhbmQgYXBwcm92YWwgcG9saWNpZXMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgRXh0ZXJuYWwgc3lzdGVtcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBpZHAgPSBzb2Z0d2FyZVN5c3RlbSAiSWRlbnRpdHkgUHJvdmlkZXIiICJDZW50cmFsIGF1dGhlbnRpY2F0aW9uIHNlcnZpY2UgKEtleWNsb2FrIC8gTERBUCAvIFNTTykuIFNoYXJlZCBieSB0aGUgcG9ydGFsIGFuZCBhbGwgZG93bnN0cmVhbSBjbHVzdGVycy4iIHsKICAgICAgICAgICAgdGFncyAiRXh0ZXJuYWwiCiAgICAgICAgfQoKICAgICAgICAjIFJhbmNoZXIgYWN0cyBhcyBhbiBhdXRobi9SQkFDIHByb3h5OyBpdCBkb2VzIG5vdCBhY3QgYXV0b25vbW91c2x5IG9uIGNsdXN0ZXJzLgogICAgICAgICMgVGhlIGRvd25zdHJlYW0gY2x1c3RlcnMgaG9zdCB0aGUgQ1JEIHRhcmdldCBpbnN0YW5jZXMgYW5kIGNvbnRyb2xsZXJzLgogICAgICAgIHBsYXRmb3JtSW5mcmEgPSBzb2Z0d2FyZVN5c3RlbSAiUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUiICJSYW5jaGVyIChhdXRobi9SQkFDIHByb3h5KSArIFJhbmNoZXItbWFuYWdlZCBLOHMgY2x1c3RlcnMuIFRoZSBBcHByb3ZhbCBDb250cm9sbGVyIGFwcGxpZXMgQ1JEIHRhcmdldCBpbnN0YW5jZXMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQ7IGVuZCB1c2VycyBob2xkIG5vIHBlcm1pc3Npb25zIG9uIHRob3NlIHR5cGVzLiIgewogICAgICAgICAgICB0YWdzICJQbGF0Zm9ybUludGVybmFsIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgU3lzdGVtIGluIHNjb3BlIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgIHJlc291cmNlUG9ydGFsID0gc29mdHdhcmVTeXN0ZW0gIlJlc291cmNlIFBvcnRhbCIgIlNlbGYtc2VydmljZSBwb3J0YWwgZm9yIHJlcXVlc3RpbmcgYW5kIG1hbmFnaW5nIGluZnJhc3RydWN0dXJlIHJlc291cmNlcyBvbiBLdWJlcm5ldGVzIGNsdXN0ZXJzLiIgewogICAgICAgICAgICB0YWdzICJJblNjb3BlIgoKICAgICAgICAgICAgIyDilIDilIAgQ29udGFpbmVycyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgICAgIHdlYkFwcCA9IGNvbnRhaW5lciAiV2ViIEFwcGxpY2F0aW9uIiAiU2VydmVyLXNpZGUgcmVuZGVyZWQgbW9ub2xpdGguIEhhbmRsZXMgSFRUUCBzZXNzaW9ucywgcmVuZGVycyBVSSwgcmVzb2x2ZXMgYXBwcm92ZXIgbGlzdCBhdCBzdWJtaXNzaW9uIHRpbWUsIGFuZCBtYWludGFpbnMgYSBsb2NhbCBpbmZvcm1lciBjYWNoZSBmb3IgbGl2ZSByZXNvdXJjZSBzdGF0ZS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBXZWJBcHAiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJIVFRQUyIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgYXBwcm92YWxDb250cm9sbGVyID0gY29udGFpbmVyICJBcHByb3ZhbCBDb250cm9sbGVyIiAiS3ViZXJuZXRlcyBjb250cm9sbGVyIChjb250cm9sbGVyLXJ1bnRpbWUpLiBEcml2ZXMgdGhlIFJlc291cmNlUmVxdWVzdCBzdGF0ZSBtYWNoaW5lOyBhcHBsaWVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIG9uIGRvd25zdHJlYW0gY2x1c3RlcnMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQgdmlhIFNTQS4gVGhlIEhlYWx0aCBPYnNlcnZlciBtb25pdG9ycyBDUkQgdGFyZ2V0IGluc3RhbmNlIGhlYWx0aCBhbmQgcmVzdG9yZXMgb3V0LW9mLWJhbmQgZGVsZXRpb25zLiBEZXJpdmVkIG9iamVjdCBkcmlmdCBpcyBjb3JyZWN0ZWQgYnkgdGhlIENSRCB0YXJnZXQgY29udHJvbGxlci4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBDb250cm9sbGVyIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiR28sIGNvbnRyb2xsZXItcnVudGltZSIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgcmVzb3VyY2VSZXF1ZXN0Q1JEID0gY29udGFpbmVyICJSZXNvdXJjZVJlcXVlc3QgQ1JEIiAiRnVsbCBsaWZlY3ljbGUgb2YgYSByZXNvdXJjZSByZXF1ZXN0OiBwZW5kaW5nIOKGkiBhcHByb3ZlZC9yZWplY3RlZCDihpIgcHJvdmlzaW9uaW5nIOKGkiBwcm92aXNpb25lZC9mYWlsZWQuIENhcnJpZXMgZW1iZWRkZWQgYXBwcm92YWwgcG9saWN5LCBwcmUtcmVzb2x2ZWQgYXBwcm92ZXIgbGlzdCwgYW5kIHByZXZpb3VzUGFyYW1ldGVycyBmb3IgdXBkYXRlIHJvbGxiYWNrLiBDcml0aWNhbCBzcGVjIGZpZWxkcyBhcmUgaW1tdXRhYmxlIHZpYSBDRUwgcnVsZXMuIiB7CiAgICAgICAgICAgICAgICB0YWdzICJDb250YWluZXIgQ1JEIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiS3ViZXJuZXRlcyBDUkQgKGNsdXN0ZXI6IG1hbmFnZW1lbnQpIgogICAgICAgICAgICB9CgogICAgICAgICAgICBwcm92aXNpb25lZFJlc291cmNlQ1JEID0gY29udGFpbmVyICJQcm92aXNpb25lZFJlc291cmNlIENSRCIgIkF1dGhvcml0YXRpdmUgcmVjb3JkIG9mIGEgY29uZmlybWVkLW9wZXJhdGlvbmFsIHByb3Zpc2lvbmVkIHJlc291cmNlLiBXcml0dGVuIG9ubHkgYWZ0ZXIgUmVhZHkgY29uZmlybWF0aW9uIG9uIHRoZSB0YXJnZXQgY2x1c3Rlci4gQ2FycmllcyBhIGRlcHJvdmlzaW9uaW5nIGZpbmFsaXplcjsgcmVhZCBieSB0aGUgV2ViIEFwcCBpbmZvcm1lciBmb3IgbGl2ZSBzdGF0dXMgZGlzcGxheS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBDUkQiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJLdWJlcm5ldGVzIENSRCAoY2x1c3RlcjogbWFuYWdlbWVudCkiCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIHJlc291cmNlQ2F0YWxvZ3VlQ1JEID0gY29udGFpbmVyICJSZXNvdXJjZUNhdGFsb2d1ZSBDUkQiICJEZWZpbmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGEgbGltaXRzLCBhbmQgYXBwcm92YWwgcm91dGluZyBydWxlcy4gTWFuYWdlZCBieSBQbGF0Zm9ybSBBZG1pbnM7IHJlYWQgYnkgdGhlIFdlYiBBcHAgYXQgc3VibWlzc2lvbiB0aW1lLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIENSRCIKICAgICAgICAgICAgICAgIHRlY2hub2xvZ3kgIkt1YmVybmV0ZXMgQ1JEIChjbHVzdGVyOiBtYW5hZ2VtZW50KSIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgbWFpbFJlbGF5ID0gY29udGFpbmVyICJNYWlsIFJlbGF5IiAiU01UUCByZWxheS4gRGVsaXZlcnMgc3RhdGUtY2hhbmdlIG5vdGlmaWNhdGlvbnMgdG8gcmVxdWVzdGVycyBvbiBwcm92aXNpb25lZCBhbmQgZmFpbGVkIHRyYW5zaXRpb25zLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIEV4dGVybmFsIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiU01UUCIKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgUmVsYXRpb25zaGlwcyDigJQgU3lzdGVtIENvbnRleHQg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACgogICAgICAgIGVuZFVzZXIgICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJlcXVlc3RzIHJlc291cmNlcyBhbmQgbW9uaXRvcnMgc3RhdHVzIgogICAgICAgIGFwcHJvdmVyICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlcXVlc3RzIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gcmVzb3VyY2VQb3J0YWwgIkNvbmZpZ3VyZXMgcG9saWNpZXMgYW5kIHJlc291cmNlIGNhdGFsb2d1ZSIKCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gaWRwICAgICAgICAgICAiQXV0aGVudGljYXRlcyB1c2VycyB2aWEgT0lEQyIKICAgICAgICBwbGF0Zm9ybUluZnJhICAtPiBpZHAgICAgICAgICAgICJWZXJpZmllcyB1c2VyIHRva2VucyB2aWEgT0lEQyIKCiAgICAgICAgIyBXZWIgQXBwIGF1dGhlbnRpY2F0ZXMgYXMgdGhlIGxvZ2dlZC1pbiB1c2VyICh2aWEgUmFuY2hlciBwcm94eSkuCiAgICAgICAgIyBBcHByb3ZhbCBDb250cm9sbGVyIGF1dGhlbnRpY2F0ZXMgYXMgaXRzIG93biBzZXJ2aWNlIGFjY291bnQuCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gcGxhdGZvcm1JbmZyYSAiV2ViIEFwcCByZWFkcyBjbHVzdGVyIHN0YXRlIGFzIHVzZXI7IENvbnRyb2xsZXIgYXBwbGllcyBDUkQgdGFyZ2V0IGluc3RhbmNlcyBhcyBzZXJ2aWNlIGFjY291bnQiCgogICAgICAgICMg4pSA4pSAIFJlbGF0aW9uc2hpcHMg4oCUIENvbnRhaW5lciBsZXZlbCDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgZW5kVXNlciAgICAgICAtPiB3ZWJBcHAgIkJyb3dzZXMgY2F0YWxvZ3VlLCBzdWJtaXRzIHJlcXVlc3RzLCBtb25pdG9ycyBzdGF0dXMgW0hUVFBTXSIKICAgICAgICBhcHByb3ZlciAgICAgIC0+IHdlYkFwcCAiUmV2aWV3cyBhbmQgYXBwcm92ZXMvcmVqZWN0cyByZXF1ZXN0cyBbSFRUUFNdIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gd2ViQXBwICJNYW5hZ2VzIHJlc291cmNlIGNhdGFsb2d1ZSBhbmQgcG9saWNpZXMgW0hUVFBTXSIKCiAgICAgICAgd2ViQXBwIC0+IGlkcCAgICAgICAgICAgICAgICAgIkF1dGhlbnRpY2F0ZXMgc2Vzc2lvbiB2aWEgT0lEQyIKICAgICAgICB3ZWJBcHAgLT4gcmVzb3VyY2VSZXF1ZXN0Q1JEICAiQ3JlYXRlcyBSZXNvdXJjZVJlcXVlc3Q7IHJlY29yZHMgYXBwcm92ZXIgZGVjaXNpb25zIgogICAgICAgIHdlYkFwcCAtPiByZXNvdXJjZUNhdGFsb2d1ZUNSRCAiUmVhZHMgcmVzb3VyY2UgdHlwZXMgYW5kIGFwcHJvdmFsIHBvbGljeSBhdCBzdWJtaXNzaW9uIHRpbWUiCiAgICAgICAgd2ViQXBwIC0+IHByb3Zpc2lvbmVkUmVzb3VyY2VDUkQgIlJlYWRzIGxpdmUgc3RhdGUgdmlhIGluZm9ybWVyIGNhY2hlIChubyBwb2xsaW5nKSIKCiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHJlc291cmNlUmVxdWVzdENSRCAgICAgIldhdGNoZXMgZXZlbnRzOyBkcml2ZXMgcGhhc2UgdHJhbnNpdGlvbnMiCiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHByb3Zpc2lvbmVkUmVzb3VyY2VDUkQgIkNyZWF0ZXMvdXBkYXRlcyBvbiBjb25maXJtZWQgcHJvdmlzaW9uaW5nOyBtYW5hZ2VzIGRlcHJvdmlzaW9uaW5nIGZpbmFsaXplciIKICAgICAgICBhcHByb3ZhbENvbnRyb2xsZXIgLT4gcGxhdGZvcm1JbmZyYSAgICAgICAgICAiQXBwbGllcy9kZWxldGVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIHZpYSBTU0E7IEhlYWx0aCBPYnNlcnZlciByZWFkcyBpbnN0YW5jZSBzdGF0dXMgcmVhZC1vbmx5IgogICAgICAgIGFwcHJvdmFsQ29udHJvbGxlciAtPiBtYWlsUmVsYXkgICAgICAgICAgICAgICJTZW5kcyBub3RpZmljYXRpb24gb24gcHJvdmlzaW9uZWQgLyBmYWlsZWQiCiAgICB9CgogICAgdmlld3MgewoKICAgICAgICAjIOKUgOKUgCBDNCBDb250ZXh0IOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgIHN5c3RlbUNvbnRleHQgcmVzb3VyY2VQb3J0YWwgIkM0Q29udGV4dF9SZXNvdXJjZVBvcnRhbCIgewogICAgICAgICAgICB0aXRsZSAiUmVzb3VyY2UgUG9ydGFsIOKAlCBTeXN0ZW0gQ29udGV4dCIKICAgICAgICAgICAgZGVzY3JpcHRpb24gIlNob3dzIHRoZSBSZXNvdXJjZSBQb3J0YWwgYW5kIGl0cyByZWxhdGlvbnNoaXBzIHdpdGggdXNlcnMsIHRoZSBJZGVudGl0eSBQcm92aWRlciwgYW5kIHRoZSBQbGF0Zm9ybSBJbmZyYXN0cnVjdHVyZSAoUmFuY2hlciArIGRvd25zdHJlYW0gS3ViZXJuZXRlcyBjbHVzdGVycykuIgogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICB9CgogICAgICAgICMg4pSA4pSAIEM0IENvbnRhaW5lciDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBjb250YWluZXIgcmVzb3VyY2VQb3J0YWwgIkM0Q29udGFpbmVyX1Jlc291cmNlUG9ydGFsIiB7CiAgICAgICAgICAgIHRpdGxlICJSZXNvdXJjZSBQb3J0YWwg4oCUIENvbnRhaW5lcnMiCiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJJbnRlcm5hbCBzdHJ1Y3R1cmUgb2YgdGhlIFJlc291cmNlIFBvcnRhbCBkZXBsb3llZCBvbiB0aGUgUmFuY2hlciBtYW5hZ2VtZW50IGNsdXN0ZXIuIFRoZSBjb21wb25lbnQtbGV2ZWwgZGV0YWlsIG9mIHRoZSBXZWIgQXBwbGljYXRpb24gYW5kIEFwcHJvdmFsIENvbnRyb2xsZXIgaXMgZG9jdW1lbnRlZCB2aWEgUGxhbnRVTUwgc2VxdWVuY2UgYW5kIHN0YXRlIGRpYWdyYW1zLiIKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgfQoKICAgICAgICBzdHlsZXMgewoKICAgICAgICAgICAgIyDilIDilIAgUGVvcGxlIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgICAgICBlbGVtZW50ICJBY3RvciIgewogICAgICAgICAgICAgICAgc2hhcGUgUGVyc29uCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFMUY1RUUKICAgICAgICAgICAgICAgIGNvbG9yICMwODUwNDEKICAgICAgICAgICAgICAgIHN0cm9rZSAjMEY2RTU2CiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIFNvZnR3YXJlIFN5c3RlbXMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIGVsZW1lbnQgIkluU2NvcGUiIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJQbGF0Zm9ybUludGVybmFsIiB7CiAgICAgICAgICAgICAgICB3aWR0aCAzODAKICAgICAgICAgICAgICAgIGhlaWdodCA0NzAKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0ZGRjNDRAogICAgICAgICAgICAgICAgY29sb3IgIzdBNEYwMAogICAgICAgICAgICAgICAgc3Ryb2tlICNCMDdEMDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJFeHRlcm5hbCIgewogICAgICAgICAgICAgICAgd2lkdGggMjgwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDAwCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGMUVGRTgKICAgICAgICAgICAgICAgIGNvbG9yICM0NDQ0M0YKICAgICAgICAgICAgICAgIHN0cm9rZSAjNUY1RTVBCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIENvbnRhaW5lcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIGVsZW1lbnQgIkNvbnRhaW5lciBXZWJBcHAiIHsKICAgICAgICAgICAgICAgIHNoYXBlIFJvdW5kZWRCb3gKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0VFRURGRQogICAgICAgICAgICAgICAgY29sb3IgIzNDMzQ4OQogICAgICAgICAgICAgICAgc3Ryb2tlICM1MzRBQjcKICAgICAgICAgICAgICAgIHdpZHRoIDQ1MAogICAgICAgICAgICAgICAgaGVpZ2h0IDM1MAogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkNvbnRhaW5lciBDb250cm9sbGVyIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNlNmI1MTgKICAgICAgICAgICAgICAgIGNvbG9yICM3QTRGMDAKICAgICAgICAgICAgICAgIHN0cm9rZSAjQjA3RDAwCiAgICAgICAgICAgICAgICB3aWR0aCA1MDAKICAgICAgICAgICAgICAgIGhlaWdodCA1NTAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgQ1JEIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFOEY0RkQKICAgICAgICAgICAgICAgIGNvbG9yICMwQjRGNkMKICAgICAgICAgICAgICAgIHN0cm9rZSAjMUE3QkI5CiAgICAgICAgICAgICAgICB3aWR0aCA1MDAKICAgICAgICAgICAgICAgIGhlaWdodCA0MDAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgRXh0ZXJuYWwiIHsKICAgICAgICAgICAgICAgIHNoYXBlIENvbXBvbmVudAogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjRjFFRkU4CiAgICAgICAgICAgICAgICBjb2xvciAjNDQ0NDNGCiAgICAgICAgICAgICAgICBzdHJva2UgIzVGNUU1QQogICAgICAgICAgICAgICAgd2lkdGggNDIwCiAgICAgICAgICAgICAgICBoZWlnaHQgMzAwCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgICMg4pSA4pSAIFJlbGF0aW9uc2hpcHMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgICAgIHJlbGF0aW9uc2hpcCAiUmVsYXRpb25zaGlwIiB7CiAgICAgICAgICAgICAgICBjb2xvciAjNzM3MjY2CiAgICAgICAgICAgICAgICBzdHlsZSBkYXNoZWQKICAgICAgICAgICAgICAgIHRoaWNrbmVzcyAyCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9Cn0=",
     "structurizr.inspection.info" : "0",
     "structurizr.inspection.ignore" : "0",
-    "structurizr.inspection.warning" : "0"
+    "structurizr.inspection.error" : "24",
+    "structurizr.inspection.warning" : "0",
+    "structurizr.dsl" : "d29ya3NwYWNlICJSZXNvdXJjZSBQb3J0YWwiICJDNCBkaWFncmFtcyDigJQgUmVzb3VyY2UgUG9ydGFsIHY5LiBTZWxmLXNlcnZpY2UgcG9ydGFsIGZvciBpbmZyYXN0cnVjdHVyZSByZXNvdXJjZXMgb24gUmFuY2hlci1tYW5hZ2VkIEt1YmVybmV0ZXMgY2x1c3RlcnMuIFVzZXIgaWRlbnRpdHkgZ292ZXJucyBtYW5hZ2VtZW50LWNsdXN0ZXIgb3BlcmF0aW9uczsgdGhlIEFwcHJvdmFsIENvbnRyb2xsZXIgYWN0cyB1bmRlciBpdHMgb3duIHNlcnZpY2UgYWNjb3VudCBvbiB0YXJnZXQgY2x1c3RlcnMuIiB7CgogICAgbW9kZWwgewoKICAgICAgICAjIOKUgOKUgCBIdW1hbiBhY3RvcnMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgZW5kVXNlciA9IHBlcnNvbiAiRW5kIFVzZXIiICJSZXF1ZXN0cyBhbmQgbW9uaXRvcnMgaW5mcmFzdHJ1Y3R1cmUgcmVzb3VyY2VzIHZpYSB0aGUgcG9ydGFsLiIgewogICAgICAgICAgICB0YWdzICJBY3RvciIKICAgICAgICB9CgogICAgICAgIGFwcHJvdmVyID0gcGVyc29uICJBcHByb3ZlciIgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlc291cmNlIHJlcXVlc3RzIGJlZm9yZSBwcm92aXNpb25pbmcuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgcGxhdGZvcm1BZG1pbiA9IHBlcnNvbiAiUGxhdGZvcm0gQWRtaW4iICJDb25maWd1cmVzIGF2YWlsYWJsZSByZXNvdXJjZSB0eXBlcywgcXVvdGFzLCBhbmQgYXBwcm92YWwgcG9saWNpZXMuIiB7CiAgICAgICAgICAgIHRhZ3MgIkFjdG9yIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgRXh0ZXJuYWwgc3lzdGVtcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBpZHAgPSBzb2Z0d2FyZVN5c3RlbSAiSWRlbnRpdHkgUHJvdmlkZXIiICJDZW50cmFsIGF1dGhlbnRpY2F0aW9uIHNlcnZpY2UgKEtleWNsb2FrIC8gTERBUCAvIFNTTykuIFNoYXJlZCBieSB0aGUgcG9ydGFsIGFuZCBhbGwgZG93bnN0cmVhbSBjbHVzdGVycy4iIHsKICAgICAgICAgICAgdGFncyAiRXh0ZXJuYWwiCiAgICAgICAgfQoKICAgICAgICAjIFJhbmNoZXIgYWN0cyBhcyBhbiBhdXRobi9SQkFDIHByb3h5OyBpdCBkb2VzIG5vdCBhY3QgYXV0b25vbW91c2x5IG9uIGNsdXN0ZXJzLgogICAgICAgICMgVGhlIGRvd25zdHJlYW0gY2x1c3RlcnMgaG9zdCB0aGUgQ1JEIHRhcmdldCBpbnN0YW5jZXMgYW5kIGNvbnRyb2xsZXJzLgogICAgICAgIHBsYXRmb3JtSW5mcmEgPSBzb2Z0d2FyZVN5c3RlbSAiUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUiICJSYW5jaGVyIChhdXRobi9SQkFDIHByb3h5KSArIFJhbmNoZXItbWFuYWdlZCBLOHMgY2x1c3RlcnMuIFRoZSBBcHByb3ZhbCBDb250cm9sbGVyIGFwcGxpZXMgQ1JEIHRhcmdldCBpbnN0YW5jZXMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQ7IGVuZCB1c2VycyBob2xkIG5vIHBlcm1pc3Npb25zIG9uIHRob3NlIHR5cGVzLiIgewogICAgICAgICAgICB0YWdzICJQbGF0Zm9ybUludGVybmFsIgogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgU3lzdGVtIGluIHNjb3BlIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgIHJlc291cmNlUG9ydGFsID0gc29mdHdhcmVTeXN0ZW0gIlJlc291cmNlIFBvcnRhbCIgIlNlbGYtc2VydmljZSBwb3J0YWwgZm9yIHJlcXVlc3RpbmcgYW5kIG1hbmFnaW5nIGluZnJhc3RydWN0dXJlIHJlc291cmNlcyBvbiBLdWJlcm5ldGVzIGNsdXN0ZXJzLiIgewogICAgICAgICAgICB0YWdzICJJblNjb3BlIgoKICAgICAgICAgICAgIyDilIDilIAgQ29udGFpbmVycyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgICAgIHdlYkFwcCA9IGNvbnRhaW5lciAiV2ViIEFwcGxpY2F0aW9uIiAiU2VydmVyLXNpZGUgcmVuZGVyZWQgbW9ub2xpdGguIEhhbmRsZXMgSFRUUCBzZXNzaW9ucywgcmVuZGVycyBVSSwgcmVzb2x2ZXMgYXBwcm92ZXIgbGlzdCBhdCBzdWJtaXNzaW9uIHRpbWUsIGFuZCBtYWludGFpbnMgYSBsb2NhbCBpbmZvcm1lciBjYWNoZSBmb3IgbGl2ZSByZXNvdXJjZSBzdGF0ZS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBXZWJBcHAiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJIVFRQUyIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgYXBwcm92YWxDb250cm9sbGVyID0gY29udGFpbmVyICJBcHByb3ZhbCBDb250cm9sbGVyIiAiS3ViZXJuZXRlcyBjb250cm9sbGVyIChjb250cm9sbGVyLXJ1bnRpbWUpLiBEcml2ZXMgdGhlIFJlc291cmNlUmVxdWVzdCBzdGF0ZSBtYWNoaW5lOyBhcHBsaWVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIG9uIGRvd25zdHJlYW0gY2x1c3RlcnMgdW5kZXIgaXRzIG93biBzZXJ2aWNlIGFjY291bnQgdmlhIFNTQS4gUG9sbGluZy1mcmVlOiBleGl0cyB3aXRoIFJlcXVldWVBZnRlciByYXRoZXIgdGhhbiBibG9ja2luZyB3YXRjaCBsb29wcy4gVGhlIEhlYWx0aCBPYnNlcnZlciBtb25pdG9ycyBDUkQgdGFyZ2V0IGluc3RhbmNlIGhlYWx0aCBhbmQgcmVzdG9yZXMgb3V0LW9mLWJhbmQgZGVsZXRpb25zIChhdWRpdC10cmFpbCB0cmFkZS1vZmY6IHNlZSBkb2N1bWVudGF0aW9uKS4gRGVyaXZlZCBvYmplY3QgZHJpZnQgaXMgY29ycmVjdGVkIGJ5IHRoZSBDUkQgdGFyZ2V0IGNvbnRyb2xsZXIuIiB7CiAgICAgICAgICAgICAgICB0YWdzICJDb250YWluZXIgQ29udHJvbGxlciIKICAgICAgICAgICAgICAgIHRlY2hub2xvZ3kgIkdvLCBjb250cm9sbGVyLXJ1bnRpbWUiCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIHJlc291cmNlUmVxdWVzdENSRCA9IGNvbnRhaW5lciAiUmVzb3VyY2VSZXF1ZXN0IENSRCIgIkZ1bGwgbGlmZWN5Y2xlIG9mIGEgcmVzb3VyY2UgcmVxdWVzdDogcGVuZGluZyDihpIgYXBwcm92ZWQvcmVqZWN0ZWQg4oaSIHByb3Zpc2lvbmluZyDihpIgcHJvdmlzaW9uZWQvcm9sbGluZ19iYWNrIOKGkiBmYWlsZWQvcm9sbGJhY2tfZmFpbGVkLiByb2xsaW5nX2JhY2sgaXMgdXBkYXRlLW9ubHkgYW5kIHZpc2libGUgdG8gRW5kIFVzZXJzLiBDYXJyaWVzIGVtYmVkZGVkIGFwcHJvdmFsIHBvbGljeSwgcHJlLXJlc29sdmVkIGFwcHJvdmVyIGxpc3QsIGFuZCBwcmV2aW91c1BhcmFtZXRlcnMgZm9yIHVwZGF0ZSByb2xsYmFjay4gQ3JpdGljYWwgc3BlYyBmaWVsZHMgYXJlIGltbXV0YWJsZSB2aWEgQ0VMIHJ1bGVzLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIENSRCIKICAgICAgICAgICAgICAgIHRlY2hub2xvZ3kgIkt1YmVybmV0ZXMgQ1JEIChjbHVzdGVyOiBtYW5hZ2VtZW50KSIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgcHJvdmlzaW9uZWRSZXNvdXJjZUNSRCA9IGNvbnRhaW5lciAiUHJvdmlzaW9uZWRSZXNvdXJjZSBDUkQiICJBdXRob3JpdGF0aXZlIHJlY29yZCBvZiBhIGNvbmZpcm1lZC1vcGVyYXRpb25hbCBwcm92aXNpb25lZCByZXNvdXJjZS4gV3JpdHRlbiBvbmx5IGFmdGVyIFJlYWR5IGNvbmZpcm1hdGlvbiBvbiB0aGUgdGFyZ2V0IGNsdXN0ZXIuIENhcnJpZXMgYSBkZXByb3Zpc2lvbmluZyBmaW5hbGl6ZXI7IHJlYWQgYnkgdGhlIFdlYiBBcHAgaW5mb3JtZXIgZm9yIGxpdmUgc3RhdHVzIGRpc3BsYXkuIiB7CiAgICAgICAgICAgICAgICB0YWdzICJDb250YWluZXIgQ1JEIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiS3ViZXJuZXRlcyBDUkQgKGNsdXN0ZXI6IG1hbmFnZW1lbnQpIgogICAgICAgICAgICB9CgogICAgICAgICAgICByZXNvdXJjZUNhdGFsb2d1ZUNSRCA9IGNvbnRhaW5lciAiUmVzb3VyY2VDYXRhbG9ndWUgQ1JEIiAiRGVmaW5lcyBhdmFpbGFibGUgcmVzb3VyY2UgdHlwZXMsIHF1b3RhIGxpbWl0cywgYW5kIGFwcHJvdmFsIHJvdXRpbmcgcnVsZXMuIE1hbmFnZWQgYnkgUGxhdGZvcm0gQWRtaW5zOyByZWFkIGJ5IHRoZSBXZWIgQXBwIGF0IHN1Ym1pc3Npb24gdGltZS4iIHsKICAgICAgICAgICAgICAgIHRhZ3MgIkNvbnRhaW5lciBDUkQiCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJLdWJlcm5ldGVzIENSRCAoY2x1c3RlcjogbWFuYWdlbWVudCkiCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIGFkbWlzc2lvbldlYmhvb2sgPSBjb250YWluZXIgIlJlc291cmNlUmVxdWVzdCBBZG1pc3Npb24gV2ViaG9vayIgIlZhbGlkYXRpbmdBZG1pc3Npb25XZWJob29rIG9uIFJlc291cmNlUmVxdWVzdCBDUkVBVEUuIFZlcmlmaWVzIGFwcHJvdmFsIHBvbGljeSBzbmFwc2hvdCwgYXBwcm92ZXIgZGF0YSwgdGFyZ2V0Q1JELCB0YXJnZXRDbHVzdGVyLCBhbmQgcmVxdWVzdGVyIGlkZW50aXR5IGFnYWluc3QgdGhlIFJlc291cmNlQ2F0YWxvZ3VlIGVudHJ5LiBmYWlsdXJlUG9saWN5OiBGYWlsLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIFdlYmhvb2siCiAgICAgICAgICAgICAgICB0ZWNobm9sb2d5ICJHbywgS3ViZXJuZXRlcyBhZG1pc3Npb24gd2ViaG9vayIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgbWFpbFJlbGF5ID0gY29udGFpbmVyICJNYWlsIFJlbGF5IiAiU01UUCByZWxheS4gRGVsaXZlcnMgc3RhdGUtY2hhbmdlIG5vdGlmaWNhdGlvbnMgdG8gcmVxdWVzdGVycyBvbiBwcm92aXNpb25lZCBhbmQgZmFpbGVkIHRyYW5zaXRpb25zLiIgewogICAgICAgICAgICAgICAgdGFncyAiQ29udGFpbmVyIEV4dGVybmFsIgogICAgICAgICAgICAgICAgdGVjaG5vbG9neSAiU01UUCIKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgIyDilIDilIAgUmVsYXRpb25zaGlwcyDigJQgU3lzdGVtIENvbnRleHQg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACgogICAgICAgIGVuZFVzZXIgICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJlcXVlc3RzIHJlc291cmNlcyBhbmQgbW9uaXRvcnMgc3RhdHVzIgogICAgICAgIGFwcHJvdmVyICAgICAgLT4gcmVzb3VyY2VQb3J0YWwgIlJldmlld3MgYW5kIGFwcHJvdmVzIHJlcXVlc3RzIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gcmVzb3VyY2VQb3J0YWwgIkNvbmZpZ3VyZXMgcG9saWNpZXMgYW5kIHJlc291cmNlIGNhdGFsb2d1ZSIKCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gaWRwICAgICAgICAgICAiQXV0aGVudGljYXRlcyB1c2VycyB2aWEgT0lEQyIKICAgICAgICBwbGF0Zm9ybUluZnJhICAtPiBpZHAgICAgICAgICAgICJWZXJpZmllcyB1c2VyIHRva2VucyB2aWEgT0lEQyIKCiAgICAgICAgIyBXZWIgQXBwIGF1dGhlbnRpY2F0ZXMgYXMgdGhlIGxvZ2dlZC1pbiB1c2VyICh2aWEgUmFuY2hlciBwcm94eSkuCiAgICAgICAgIyBBcHByb3ZhbCBDb250cm9sbGVyIGF1dGhlbnRpY2F0ZXMgYXMgaXRzIG93biBzZXJ2aWNlIGFjY291bnQuCiAgICAgICAgcmVzb3VyY2VQb3J0YWwgLT4gcGxhdGZvcm1JbmZyYSAiV2ViIEFwcCByZWFkcyBjbHVzdGVyIHN0YXRlIGFzIHVzZXI7IENvbnRyb2xsZXIgYXBwbGllcyBDUkQgdGFyZ2V0IGluc3RhbmNlcyBhcyBzZXJ2aWNlIGFjY291bnQiCgogICAgICAgICMg4pSA4pSAIFJlbGF0aW9uc2hpcHMg4oCUIENvbnRhaW5lciBsZXZlbCDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCiAgICAgICAgZW5kVXNlciAgICAgICAtPiB3ZWJBcHAgIkJyb3dzZXMgY2F0YWxvZ3VlLCBzdWJtaXRzIHJlcXVlc3RzLCBtb25pdG9ycyBzdGF0dXMgW0hUVFBTXSIKICAgICAgICBhcHByb3ZlciAgICAgIC0+IHdlYkFwcCAiUmV2aWV3cyBhbmQgYXBwcm92ZXMvcmVqZWN0cyByZXF1ZXN0cyBbSFRUUFNdIgogICAgICAgIHBsYXRmb3JtQWRtaW4gLT4gd2ViQXBwICJNYW5hZ2VzIHJlc291cmNlIGNhdGFsb2d1ZSBhbmQgcG9saWNpZXMgW0hUVFBTXSIKCiAgICAgICAgd2ViQXBwIC0+IGlkcCAgICAgICAgICAgICAgICAgIkF1dGhlbnRpY2F0ZXMgc2Vzc2lvbiB2aWEgT0lEQyIKICAgICAgICB3ZWJBcHAgLT4gcmVzb3VyY2VSZXF1ZXN0Q1JEICAiQ3JlYXRlcyBSZXNvdXJjZVJlcXVlc3Q7IHJlY29yZHMgYXBwcm92ZXIgZGVjaXNpb25zIiB7CiAgICAgICAgICAgIHRhZ3MgIldlYkFwcENSRCIKICAgICAgICB9CiAgICAgICAgd2ViQXBwIC0+IHJlc291cmNlQ2F0YWxvZ3VlQ1JEICJSZWFkcyByZXNvdXJjZSB0eXBlcyBhbmQgYXBwcm92YWwgcG9saWN5IGF0IHN1Ym1pc3Npb24gdGltZSIgewogICAgICAgICAgICB0YWdzICJXZWJBcHBDUkQiCiAgICAgICAgfQogICAgICAgIHdlYkFwcCAtPiBwcm92aXNpb25lZFJlc291cmNlQ1JEICJSZWFkcyBsaXZlIHN0YXRlIHZpYSBpbmZvcm1lciBjYWNoZSAobm8gcG9sbGluZykiIHsKICAgICAgICAgICAgdGFncyAiV2ViQXBwQ1JEIgogICAgICAgIH0KCiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHJlc291cmNlUmVxdWVzdENSRCAgICAgIldhdGNoZXMgZXZlbnRzOyBkcml2ZXMgcGhhc2UgdHJhbnNpdGlvbnMiIHsKICAgICAgICAgICAgdGFncyAiQ29udHJvbGxlckNSRCIKICAgICAgICB9CiAgICAgICAgYXBwcm92YWxDb250cm9sbGVyIC0+IHByb3Zpc2lvbmVkUmVzb3VyY2VDUkQgIkNyZWF0ZXMvdXBkYXRlcyBvbiBjb25maXJtZWQgcHJvdmlzaW9uaW5nOyBtYW5hZ2VzIGRlcHJvdmlzaW9uaW5nIGZpbmFsaXplciIgewogICAgICAgICAgICB0YWdzICJDb250cm9sbGVyQ1JEIgogICAgICAgIH0KICAgICAgICBhcHByb3ZhbENvbnRyb2xsZXIgLT4gcGxhdGZvcm1JbmZyYSAgICAgICAgICAiQXBwbGllcy9kZWxldGVzIENSRCB0YXJnZXQgaW5zdGFuY2VzIHZpYSBTU0E7IEhlYWx0aCBPYnNlcnZlciByZWFkcyBpbnN0YW5jZSBzdGF0dXMgcmVhZC1vbmx5IgogICAgICAgIGFwcHJvdmFsQ29udHJvbGxlciAtPiBtYWlsUmVsYXkgICAgICAgICAgICAgICJTZW5kcyBub3RpZmljYXRpb24gb24gcHJvdmlzaW9uZWQgLyBmYWlsZWQgLyByb2xsYmFja19mYWlsZWQ7IGF0LW1vc3Qtb25jZSB2aWEgc3RhdHVzLm5vdGlmaWNhdGlvblNlbnQiCgogICAgICAgIHBsYXRmb3JtSW5mcmEgICAgICAtPiBhZG1pc3Npb25XZWJob29rICAgICAgICJDYWxscyBzeW5jaHJvbm91c2x5IG9uIFJlc291cmNlUmVxdWVzdCBDUkVBVEUgKFZhbGlkYXRpbmdXZWJob29rQ29uZmlndXJhdGlvbikiCiAgICAgICAgYWRtaXNzaW9uV2ViaG9vayAgIC0+IHJlc291cmNlQ2F0YWxvZ3VlQ1JEICAgIlJlYWRzIFJlc291cmNlQ2F0YWxvZ3VlIGVudHJ5IHRvIHZlcmlmeSBwb2xpY3kgc25hcHNob3QgYW5kIGZpZWxkIGVxdWFsaXR5IiB7CiAgICAgICAgICAgIHRhZ3MgIldlYmhvb2tDUkQiCiAgICAgICAgfQogICAgICAgIGFkbWlzc2lvbldlYmhvb2sgICAtPiBwbGF0Zm9ybUluZnJhICAgICAgICAgICJSZWFkcyBSYW5jaGVyIGNsdXN0ZXIgb2JqZWN0cyB0byB2ZXJpZnkgY2x1c3RlclNlbGVjdG9yIG1lbWJlcnNoaXAgYW5kIHRlYW1MYWJlbCByZXNvbHV0aW9uIgogICAgfQoKICAgIHZpZXdzIHsKCiAgICAgICAgIyDilIDilIAgQzQgQ29udGV4dCDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICBzeXN0ZW1Db250ZXh0IHJlc291cmNlUG9ydGFsICJDNENvbnRleHRfUmVzb3VyY2VQb3J0YWwiIHsKICAgICAgICAgICAgdGl0bGUgIlJlc291cmNlIFBvcnRhbCDigJQgU3lzdGVtIENvbnRleHQiCiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJTaG93cyB0aGUgUmVzb3VyY2UgUG9ydGFsIGFuZCBpdHMgcmVsYXRpb25zaGlwcyB3aXRoIHVzZXJzLCB0aGUgSWRlbnRpdHkgUHJvdmlkZXIsIGFuZCB0aGUgUGxhdGZvcm0gSW5mcmFzdHJ1Y3R1cmUgKFJhbmNoZXIgKyBkb3duc3RyZWFtIEt1YmVybmV0ZXMgY2x1c3RlcnMpLiIKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgfQoKICAgICAgICAjIOKUgOKUgCBDNCBDb250YWluZXIg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiAgICAgICAgY29udGFpbmVyIHJlc291cmNlUG9ydGFsICJDNENvbnRhaW5lcl9SZXNvdXJjZVBvcnRhbCIgewogICAgICAgICAgICB0aXRsZSAiUmVzb3VyY2UgUG9ydGFsIOKAlCBDb250YWluZXJzIgogICAgICAgICAgICBkZXNjcmlwdGlvbiAiSW50ZXJuYWwgc3RydWN0dXJlIG9mIHRoZSBSZXNvdXJjZSBQb3J0YWwgZGVwbG95ZWQgb24gdGhlIFJhbmNoZXIgbWFuYWdlbWVudCBjbHVzdGVyLiBUaGUgY29tcG9uZW50LWxldmVsIGRldGFpbCBvZiB0aGUgV2ViIEFwcGxpY2F0aW9uIGFuZCBBcHByb3ZhbCBDb250cm9sbGVyIGlzIGRvY3VtZW50ZWQgdmlhIFBsYW50VU1MIHNlcXVlbmNlIGFuZCBzdGF0ZSBkaWFncmFtcy4iCiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgIH0KCiAgICAgICAgc3R5bGVzIHsKCiAgICAgICAgICAgICMg4pSA4pSAIFBlb3BsZSDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICAgICAgZWxlbWVudCAiQWN0b3IiIHsKICAgICAgICAgICAgICAgIHNoYXBlIFBlcnNvbgogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjRTFGNUVFCiAgICAgICAgICAgICAgICBjb2xvciAjMDg1MDQxCiAgICAgICAgICAgICAgICBzdHJva2UgIzBGNkU1NgogICAgICAgICAgICB9CgogICAgICAgICAgICAjIOKUgOKUgCBTb2Z0d2FyZSBTeXN0ZW1zIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgICAgICBlbGVtZW50ICJJblNjb3BlIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFRUVERkUKICAgICAgICAgICAgICAgIGNvbG9yICMzQzM0ODkKICAgICAgICAgICAgICAgIHN0cm9rZSAjNTM0QUI3CiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiUGxhdGZvcm1JbnRlcm5hbCIgewogICAgICAgICAgICAgICAgd2lkdGggMzgwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDcwCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGRkYzQ0QKICAgICAgICAgICAgICAgIGNvbG9yICM3QTRGMDAKICAgICAgICAgICAgICAgIHN0cm9rZSAjQjA3RDAwCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiRXh0ZXJuYWwiIHsKICAgICAgICAgICAgICAgIHdpZHRoIDI4MAogICAgICAgICAgICAgICAgaGVpZ2h0IDQwMAogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjRjFFRkU4CiAgICAgICAgICAgICAgICBjb2xvciAjNDQ0NDNGCiAgICAgICAgICAgICAgICBzdHJva2UgIzVGNUU1QQogICAgICAgICAgICB9CgogICAgICAgICAgICAjIOKUgOKUgCBDb250YWluZXJzIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgV2ViQXBwIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBSb3VuZGVkQm94CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNFRUVERkUKICAgICAgICAgICAgICAgIGNvbG9yICMzQzM0ODkKICAgICAgICAgICAgICAgIHN0cm9rZSAjNTM0QUI3CiAgICAgICAgICAgICAgICB3aWR0aCA0NTAKICAgICAgICAgICAgICAgIGhlaWdodCAzNTAKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIgQ29udHJvbGxlciIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjZTZiNTE4CiAgICAgICAgICAgICAgICBjb2xvciAjN0E0RjAwCiAgICAgICAgICAgICAgICBzdHJva2UgI0IwN0QwMAogICAgICAgICAgICAgICAgd2lkdGggNTAwCiAgICAgICAgICAgICAgICBoZWlnaHQgNTUwCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ29udGFpbmVyIENSRCIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjRThGNEZECiAgICAgICAgICAgICAgICBjb2xvciAjMEI0RjZDCiAgICAgICAgICAgICAgICBzdHJva2UgIzFBN0JCOQogICAgICAgICAgICAgICAgd2lkdGggNTAwCiAgICAgICAgICAgICAgICBoZWlnaHQgNDAwCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ29udGFpbmVyIEV4dGVybmFsIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBDb21wb25lbnQKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgI0YxRUZFOAogICAgICAgICAgICAgICAgY29sb3IgIzQ0NDQzRgogICAgICAgICAgICAgICAgc3Ryb2tlICM1RjVFNUEKICAgICAgICAgICAgICAgIHdpZHRoIDQyMAogICAgICAgICAgICAgICAgaGVpZ2h0IDMwMAogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkNvbnRhaW5lciBXZWJob29rIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBSb3VuZGVkQm94CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNGREU4RTgKICAgICAgICAgICAgICAgIGNvbG9yICM2QjE1MTUKICAgICAgICAgICAgICAgIHN0cm9rZSAjQjcxQzFDCiAgICAgICAgICAgICAgICB3aWR0aCA1NTAKICAgICAgICAgICAgICAgIGhlaWdodCAzMDAKICAgICAgICAgICAgfQoKICAgICAgICAgICAgIyDilIDilIAgUmVsYXRpb25zaGlwcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKICAgICAgICAgICAgcmVsYXRpb25zaGlwICJSZWxhdGlvbnNoaXAiIHsKICAgICAgICAgICAgICAgIGNvbG9yICM3MzcyNjYKICAgICAgICAgICAgICAgIHN0eWxlIGRhc2hlZAogICAgICAgICAgICAgICAgdGhpY2tuZXNzIDIKICAgICAgICAgICAgfQogICAgICAgICAgICByZWxhdGlvbnNoaXAgIldlYkFwcENSRCIgewogICAgICAgICAgICAgICAgY29sb3IgIzUzNEFCNwogICAgICAgICAgICAgICAgc3R5bGUgZGFzaGVkCiAgICAgICAgICAgICAgICB0aGlja25lc3MgMgogICAgICAgICAgICB9CiAgICAgICAgICAgIHJlbGF0aW9uc2hpcCAiQ29udHJvbGxlckNSRCIgewogICAgICAgICAgICAgICAgY29sb3IgI0IwN0QwMAogICAgICAgICAgICAgICAgc3R5bGUgZGFzaGVkCiAgICAgICAgICAgICAgICB0aGlja25lc3MgMgogICAgICAgICAgICB9CiAgICAgICAgICAgIHJlbGF0aW9uc2hpcCAiV2ViaG9va0NSRCIgewogICAgICAgICAgICAgICAgY29sb3IgI0I3MUMxQwogICAgICAgICAgICAgICAgc3R5bGUgZGFzaGVkCiAgICAgICAgICAgICAgICB0aGlja25lc3MgMgogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQp9"
   },
   "views" : {
     "configuration" : {
       "lastSavedView" : "C4Container_ResourcePortal",
+      "metadataSymbols" : "SquareBrackets",
       "styles" : {
         "elements" : [ {
           "background" : "#e1f5ee",
@@ -248,18 +286,18 @@
           "stroke" : "#0f6e56",
           "tag" : "Actor"
         }, {
-          "background" : "#e8f4fd",
-          "color" : "#0b4f6c",
-          "height" : 400,
-          "stroke" : "#1a7bb9",
-          "tag" : "Container CRD",
-          "width" : 500
-        }, {
           "background" : "#e6b518",
           "color" : "#7a4f00",
           "height" : 550,
           "stroke" : "#b07d00",
           "tag" : "Container Controller",
+          "width" : 500
+        }, {
+          "background" : "#e8f4fd",
+          "color" : "#0b4f6c",
+          "height" : 400,
+          "stroke" : "#1a7bb9",
+          "tag" : "Container CRD",
           "width" : 500
         }, {
           "background" : "#f1efe8",
@@ -277,6 +315,14 @@
           "stroke" : "#534ab7",
           "tag" : "Container WebApp",
           "width" : 450
+        }, {
+          "background" : "#fde8e8",
+          "color" : "#6b1515",
+          "height" : 300,
+          "shape" : "RoundedBox",
+          "stroke" : "#b71c1c",
+          "tag" : "Container Webhook",
+          "width" : 550
         }, {
           "background" : "#f1efe8",
           "color" : "#44443f",
@@ -298,9 +344,24 @@
           "width" : 380
         } ],
         "relationships" : [ {
+          "color" : "#b07d00",
+          "style" : "Dashed",
+          "tag" : "ControllerCRD",
+          "thickness" : 2
+        }, {
           "color" : "#737266",
           "style" : "Dashed",
           "tag" : "Relationship",
+          "thickness" : 2
+        }, {
+          "color" : "#534ab7",
+          "style" : "Dashed",
+          "tag" : "WebAppCRD",
+          "thickness" : 2
+        }, {
+          "color" : "#b71c1c",
+          "style" : "Dashed",
+          "tag" : "WebhookCRD",
           "thickness" : 2
         } ]
       },
@@ -309,113 +370,130 @@
     "containerViews" : [ {
       "description" : "Internal structure of the Resource Portal deployed on the Rancher management cluster. The component-level detail of the Web Application and Approval Controller is documented via PlantUML sequence and state diagrams.",
       "dimensions" : {
-        "height" : 3085,
-        "width" : 3365
+        "height" : 3727,
+        "width" : 4396
       },
       "elements" : [ {
         "id" : "1",
-        "x" : 330,
-        "y" : 143
+        "x" : 1273,
+        "y" : 54
       }, {
         "id" : "2",
-        "x" : 200,
-        "y" : 998
+        "x" : 68,
+        "y" : 39
       }, {
         "id" : "3",
-        "x" : 335,
-        "y" : 1582
+        "x" : 653,
+        "y" : 56
       }, {
         "id" : "4",
-        "x" : 2795,
-        "y" : 95
+        "x" : 138,
+        "y" : 3124
       }, {
         "id" : "5",
-        "x" : 2765,
-        "y" : 2355
+        "x" : 2068,
+        "y" : 3104
       }, {
         "id" : "7",
-        "x" : 915,
-        "y" : 618
+        "x" : 618,
+        "y" : 972
       }, {
         "id" : "8",
-        "x" : 990,
-        "y" : 1483
+        "x" : 639,
+        "y" : 1655
       }, {
         "id" : "9",
-        "x" : 2070,
-        "y" : 1263
+        "x" : 2418,
+        "y" : 2214
       }, {
         "id" : "10",
-        "x" : 2055,
-        "y" : 1775
+        "x" : 2393,
+        "y" : 1219
       }, {
         "id" : "11",
-        "x" : 2080,
-        "y" : 643
+        "x" : 2418,
+        "y" : 1709
       }, {
         "id" : "12",
-        "x" : 925,
-        "y" : 2328
+        "x" : 3728,
+        "y" : 2564
+      }, {
+        "id" : "13",
+        "x" : 683,
+        "y" : 2596
       } ],
       "externalSoftwareSystemBoundariesVisible" : false,
       "key" : "C4Container_ResourcePortal",
       "name" : "Container View: Resource Portal",
       "order" : 2,
       "relationships" : [ {
-        "id" : "17",
+        "id" : "18"
+      }, {
+        "id" : "20"
+      }, {
+        "id" : "21"
+      }, {
+        "id" : "22"
+      }, {
+        "id" : "23",
         "vertices" : [ {
-          "x" : 2955,
-          "y" : 1878
+          "x" : 296,
+          "y" : 1147
         } ]
       }, {
-        "id" : "19",
+        "id" : "24",
         "vertices" : [ {
-          "x" : 530,
-          "y" : 543
-        }, {
-          "x" : 660,
-          "y" : 693
+          "x" : 1803,
+          "y" : 1864
         } ]
-      }, {
-        "id" : "20",
-        "vertices" : [ {
-          "x" : 590,
-          "y" : 1088
-        } ]
-      }, {
-        "id" : "21",
-        "vertices" : [ {
-          "x" : 780,
-          "y" : 1325
-        } ]
-      }, {
-        "id" : "22",
-        "vertices" : [ {
-          "x" : 1140,
-          "y" : 305
-        } ]
-      }, {
-        "id" : "23"
-      }, {
-        "id" : "24"
       }, {
         "id" : "25",
         "vertices" : [ {
-          "x" : 1310,
-          "y" : 970
+          "x" : 2288,
+          "y" : 1764
         } ]
       }, {
-        "id" : "26"
+        "id" : "26",
+        "vertices" : [ {
+          "x" : 2643,
+          "y" : 1147
+        } ]
       }, {
         "id" : "27"
       }, {
         "id" : "28",
         "vertices" : [ {
-          "x" : 1630,
-          "y" : 2425
+          "x" : 889,
+          "y" : 1569
+        }, {
+          "x" : 1433,
+          "y" : 1309
+        }, {
+          "x" : 2363,
+          "y" : 1309
         } ]
       }, {
         "id" : "29"
+      }, {
+        "id" : "30"
+      }, {
+        "id" : "31",
+        "vertices" : [ {
+          "x" : 4003,
+          "y" : 3339
+        } ]
+      }, {
+        "id" : "33",
+        "vertices" : [ {
+          "x" : 3963,
+          "y" : 1909
+        } ]
+      }, {
+        "id" : "34",
+        "vertices" : [ {
+          "x" : 3103,
+          "y" : 3074
+        } ]
       } ],
       "softwareSystemId" : "6",
       "title" : "Resource Portal — Containers"
@@ -456,21 +534,21 @@
       "name" : "System Context View: Resource Portal",
       "order" : 1,
       "relationships" : [ {
-        "id" : "13",
+        "id" : "14",
         "vertices" : [ {
           "x" : 769,
           "y" : 342
         } ]
       }, {
-        "id" : "14"
+        "id" : "15"
       }, {
-        "id" : "15",
+        "id" : "16",
         "vertices" : [ {
           "x" : 769,
           "y" : 1242
         } ]
       }, {
-        "id" : "16",
+        "id" : "17",
         "vertices" : [ {
           "x" : 1559,
           "y" : 653
@@ -479,13 +557,15 @@
           "y" : 653
         } ]
       }, {
-        "id" : "17",
+        "id" : "18",
         "vertices" : [ {
           "x" : 2279,
           "y" : 930
         } ]
       }, {
-        "id" : "18"
+        "id" : "19"
+      }, {
+        "id" : "32"
       } ],
       "softwareSystemId" : "6",
       "title" : "Resource Portal — System Context"

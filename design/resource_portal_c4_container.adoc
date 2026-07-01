@@ -248,6 +248,40 @@ A `ValidatingAdmissionWebhook` enforces constraints on `ResourceCatalogue` objec
 
 Schema-level constraints (`instanceNamePrefix` length, `requiredApprovals ≥ 1`, `name` pattern, `teamClaim` required when `perTeam` is present) are enforced by CEL rules in the CRD definition itself.
 
+=== ResourceRequest Admission Webhook
+
+The `ResourceRequest Admission Webhook` is a `ValidatingAdmissionWebhook` registered with the management cluster's API server. It is called synchronously on every `ResourceRequest` CREATE before the object is persisted in etcd. If validation fails the create is rejected and the Web App surfaces the error to the End User.
+
+It runs as a **separate Deployment** from the Web App. Co-locating the webhook with the Web App would create a conflict of interest: a bug or compromise in the Web App could forge a `ResourceRequest` and simultaneously bypass its own validator.
+
+==== Why this component is necessary
+
+End Users must hold `create` permission on `ResourceRequest` on the management cluster so that the Web App can write as the logged-in user for the Kubernetes audit trail (see "Dual identity" in Key Design Decisions). That same permission allows a user to bypass the Web App entirely and craft a `ResourceRequest` with a forged approval policy — trivially satisfying it, then self-approving via the Web App. The admission webhook closes this gap at the API server boundary before any object reaches etcd.
+
+==== What the webhook validates
+
+On `ResourceRequest` CREATE, the webhook verifies in order:
+
+1. `spec.resourceType` names an existing `ResourceCatalogue` entry (read from webhook informer cache)
+2. `spec.approvalPolicy` is structurally equal to `ResourceCatalogue.spec.approvalPolicy` — any deviation in stage structure, `dependsOn`, `requiredApprovals`, or approver type is rejected
+3. `spec.targetCRD` equals `ResourceCatalogue.spec.targetCRD` exactly
+4. `spec.parameterSchema` equals `ResourceCatalogue.spec.parameterSchema` exactly
+5. `spec.targetCluster` names a cluster that matches `ResourceCatalogue.spec.clusterSelector` (verified against webhook cluster informer cache)
+6. `spec.requester` equals `userInfo.username` from the admission request
+7. `spec.approvalStages` matches what the Approver Resolver would have produced: `idpGroup` and `explicitUsers` `values` are copied directly from the policy; `teamLabel` group identifiers are re-derived independently by the webhook reading the cluster label and applying `groupClaimTemplate` if configured
+
+`UPDATE` operations are not in scope: CEL immutability rules on all governance fields prevent post-creation modification of the validated data.
+
+==== What the webhook does not validate
+
+* Parameter values against `spec.parameterSchema` — enforced by CEL rules in the CRD definition itself
+* Quota — remains soft enforcement at the Submission Handler
+* Approval decisions (`status.approvalStages[].decisions`) — the Approver Handler's OIDC group check is the control for decision legitimacy
+
+==== Informer cache
+
+The webhook maintains its own informer cache for `ResourceCatalogue` objects and Rancher cluster objects, populated at startup and kept in sync by watch events. This avoids a live API server call on the critical path of every submission.
+
 === Mail Relay
 
 An SMTP relay — either an in-cluster relay or an external SMTP gateway — used exclusively by the Approval Controller to deliver state-change notifications. The relay has no knowledge of portal state; it receives a plain SMTP message and delivers it. Retry and backoff are handled by the controller, not the relay.
@@ -258,7 +292,7 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 
 1. **End User** logs in via OIDC (Web App ↔ Identity Provider).
 2. **End User** browses the catalogue (Web App reads `ResourceCatalogue`).
-3. **End User** submits a request. Web App resolves the approver list, creates a `ResourceRequest` (`action: create`) in `pending` phase.
+3. **End User** submits a request. Web App resolves the approver list and writes a `ResourceRequest` (`action: create`) to the API server. The API server calls the Admission Webhook synchronously — the webhook re-derives and verifies the policy snapshot, approver data, and requester identity against the `ResourceCatalogue` entry. On validation success the object is persisted in `pending` phase; on failure the submission is rejected and the error is surfaced to the End User.
 4. **Approver** sees the pending request, approves it. Web App records the decision in the `ResourceRequest`.
 5. Approval Controller detects the transition, advances phase to `provisioning`, applies the target-cluster CRD via Rancher as controller service account, and exits with `RequeueAfter`.
 6. On each subsequent reconcile re-invocation, the controller reads the CRD target instance `status.conditions`. Once `Ready` is confirmed, it writes `ProvisionedResource` with `appliedParameters`, advances `ResourceRequest` phase to `provisioned`, and sends a notification email.
@@ -303,6 +337,8 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 7. Controller advances `ResourceRequest` phase to `provisioned` (the delete action completed successfully), sends notification.
 
 == Key Design Decisions
+
+**Admission webhook closes the user-permission bypass gap.** End Users hold `create` permission on `ResourceRequest` so the Web App can write as the logged-in user for the Kubernetes audit trail. That same permission allows a user to bypass the Web App and craft a forged `ResourceRequest` with a trivial approval policy. The `ResourceRequest Admission Webhook` closes this gap at the API server boundary: it independently re-derives and verifies the approval policy snapshot, resolved approver data, `targetCRD`, `targetCluster`, and `spec.requester` on every CREATE before the object is persisted. `failurePolicy: Fail` ensures a webhook outage blocks all submissions rather than silently permitting unvalidated writes. The webhook is deployed separately from the Web App to eliminate the conflict of interest between the primary writer and its own validator.
 
 **Dual identity, explicit boundary.** The Web App uses the logged-in user's identity for all _write_ operations on the management cluster (creating `ResourceRequest` objects, recording approver decisions) so that every user action is fully auditable through standard Kubernetes audit logs. _Read_ operations — the informer cache watch connection — use the Web App's own service account; a `SharedInformer` is a single long-lived connection and cannot carry per-user identity. Object-level access filtering for the informer-served data is enforced at the application layer within each handler (see "Informer cache access control" below). The Approval Controller uses a dedicated service account with narrow RBAC on target clusters for the provisioning step. End users have no `create`/`patch` permissions on the CRD types managed by the portal on those clusters. The portal is not a convenience layer over existing user permissions — it is the only path.
 

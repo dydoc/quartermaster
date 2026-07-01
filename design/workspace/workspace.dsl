@@ -57,6 +57,11 @@ workspace "Resource Portal" "C4 diagrams — Resource Portal v9. Self-service po
                 technology "Kubernetes CRD (cluster: management)"
             }
 
+            admissionWebhook = container "ResourceRequest Admission Webhook" "ValidatingAdmissionWebhook on ResourceRequest CREATE. Verifies approval policy snapshot, approver data, targetCRD, targetCluster, and requester identity against the ResourceCatalogue entry. failurePolicy: Fail." {
+                tags "Container Webhook"
+                technology "Go, Kubernetes admission webhook"
+            }
+
             mailRelay = container "Mail Relay" "SMTP relay. Delivers state-change notifications to requesters on provisioned and failed transitions." {
                 tags "Container External"
                 technology "SMTP"
@@ -83,14 +88,30 @@ workspace "Resource Portal" "C4 diagrams — Resource Portal v9. Self-service po
         platformAdmin -> webApp "Manages resource catalogue and policies [HTTPS]"
 
         webApp -> idp                 "Authenticates session via OIDC"
-        webApp -> resourceRequestCRD  "Creates ResourceRequest; records approver decisions"
-        webApp -> resourceCatalogueCRD "Reads resource types and approval policy at submission time"
-        webApp -> provisionedResourceCRD "Reads live state via informer cache (no polling)"
+        webApp -> resourceRequestCRD  "Creates ResourceRequest; records approver decisions" {
+            tags "WebAppCRD"
+        }
+        webApp -> resourceCatalogueCRD "Reads resource types and approval policy at submission time" {
+            tags "WebAppCRD"
+        }
+        webApp -> provisionedResourceCRD "Reads live state via informer cache (no polling)" {
+            tags "WebAppCRD"
+        }
 
-        approvalController -> resourceRequestCRD     "Watches events; drives phase transitions"
-        approvalController -> provisionedResourceCRD "Creates/updates on confirmed provisioning; manages deprovisioning finalizer"
+        approvalController -> resourceRequestCRD     "Watches events; drives phase transitions" {
+            tags "ControllerCRD"
+        }
+        approvalController -> provisionedResourceCRD "Creates/updates on confirmed provisioning; manages deprovisioning finalizer" {
+            tags "ControllerCRD"
+        }
         approvalController -> platformInfra          "Applies/deletes CRD target instances via SSA; Health Observer reads instance status read-only"
         approvalController -> mailRelay              "Sends notification on provisioned / failed / rollback_failed; at-most-once via status.notificationSent"
+
+        platformInfra      -> admissionWebhook       "Calls synchronously on ResourceRequest CREATE (ValidatingWebhookConfiguration)"
+        admissionWebhook   -> resourceCatalogueCRD   "Reads ResourceCatalogue entry to verify policy snapshot and field equality" {
+            tags "WebhookCRD"
+        }
+        admissionWebhook   -> platformInfra          "Reads Rancher cluster objects to verify clusterSelector membership and teamLabel resolution"
     }
 
     views {
@@ -171,10 +192,33 @@ workspace "Resource Portal" "C4 diagrams — Resource Portal v9. Self-service po
                 width 420
                 height 300
             }
+            element "Container Webhook" {
+                shape RoundedBox
+                background #FDE8E8
+                color #6B1515
+                stroke #B71C1C
+                width 550
+                height 300
+            }
 
             # ── Relationships ─────────────────────────────────────────────────
             relationship "Relationship" {
                 color #737266
+                style dashed
+                thickness 2
+            }
+            relationship "WebAppCRD" {
+                color #534AB7
+                style dashed
+                thickness 2
+            }
+            relationship "ControllerCRD" {
+                color #B07D00
+                style dashed
+                thickness 2
+            }
+            relationship "WebhookCRD" {
+                color #B71C1C
                 style dashed
                 thickness 2
             }

@@ -7,7 +7,7 @@
 
 toc::[]
 
-This document covers the internal structure of the two runtime containers: the **Web Application** and the **Approval Controller**. Component-level decisions do not introduce new deployable units that are not reflected in the Container diagram.
+This document covers the internal structure of the three runtime containers: the **Web Application**, the **Approval Controller**, and the **ResourceRequest Admission Webhook**. Component-level decisions do not introduce new deployable units that are not reflected in the Container diagram.
 
 
 image::state_resource_request.svg[title="State machine for the ResourceRequest CRD. The diagram traces all phase transitions from initial submission (pending) through the approval decision (approved or rejected), the provisioning step (provisioning), and the terminal outcomes (provisioned, failed, or rollback_failed). The rolling_back intermediate phase is update-only and visible to End Users in the portal. The create, update, and delete action variants share the same state machine; action semantics are expressed through the action field rather than separate state spaces.",align="center"]
@@ -16,7 +16,7 @@ image::state_resource_request.svg[title="State machine for the ResourceRequest C
 
 == Web Application — Components
 
-image::seq_submission.svg[title="Sequence diagram for the request submission flow in the Web Application. The diagram shows the interaction between the End User, the HTTP Handler, the Submission Handler, the Approver Resolver, and the Kubernetes API server (via Rancher). Key steps highlighted: parameter validation against the ResourceCatalogue schema, cluster selection from clusterSelector (create only), the single-active-request constraint check on the informer cache, the previousParameters and previousGeneration snapshot for update actions, per-stage approval data resolution (group identifiers and user identities — no group expansion), and the final ResourceRequest write authenticated as the logged-in user.",align="center"]
+image::seq_submission.svg[title="Sequence diagram for the request submission flow in the Web Application. The diagram shows the interaction between the End User, the HTTP Handler, the Submission Handler, the Approver Resolver, the Kubernetes API server (via Rancher), and the ResourceRequest Admission Webhook. Key steps highlighted: parameter validation against the ResourceCatalogue schema, cluster selection from clusterSelector (create only), the single-active-request constraint check on the informer cache, the previousParameters and previousGeneration snapshot for update actions, per-stage approval data resolution (group identifiers and user identities — no group expansion), the synchronous admission webhook call (Policy Verifier and Cluster Verifier), and the final ResourceRequest write authenticated as the logged-in user.",align="center"]
 
 === Overview
 
@@ -174,6 +174,55 @@ All drift correction on derived objects is the responsibility of the CRD target 
 **`rejected` triggers a notification.** The Notifier fires on `rejected` in addition to `provisioned`, `failed`, and `rollback_failed`. A requester whose request is rejected has no other signal that the request reached a terminal state — without this notification they would have to poll the portal. The same `status.notificationSent` guard applies.
 
 **Idempotency is a hard requirement on the Reconciler.** Because controller-runtime can invoke the Reconciler multiple times for the same object (on requeue, on resync, after a crash-restart), every operation in the reconcile loop must be safe to re-run. SSA is inherently idempotent. Phase transitions are gated on the current phase before writing. The ProvisionedResource Writer uses SSA for upsert. The Concurrency Guard and Health Observer are read-only checks with no side effects on the first read. The delete path handles `NotFound` as a confirmed deletion.
+
+'''
+
+== ResourceRequest Admission Webhook — Components
+
+=== Overview
+
+The ResourceRequest Admission Webhook is a separate Go process registered as a `ValidatingAdmissionWebhook` (`failurePolicy: Fail`) with the Kubernetes API server on the management cluster. It is not part of the Web Application process and shares no memory or state with it. The API server calls it synchronously on every `ResourceRequest` CREATE before persisting the object. All components described here are packages or logical modules within this single process.
+
+The webhook's sole purpose is to close the user-permission bypass gap: because users must hold `create` on `ResourceRequest` (required for the Kubernetes-level audit trail), a malicious user could forge a `ResourceRequest` directly, bypassing the Web Application and its approval policy enforcement. The webhook enforces at the API server boundary that every `ResourceRequest` — regardless of origin — is consistent with the current `ResourceCatalogue` policy and carries the requester's real identity.
+
+=== Components
+
+**Admission Handler** is the entry point for all `AdmissionReview` requests sent by the API server. It deserializes the incoming request body, extracts the `ResourceRequest` object from `AdmissionReview.Request.Object`, dispatches to the Policy Verifier and then the Cluster Verifier, and serializes the `AdmissionReview.Response`. On any validation failure it populates `response.status.message` with a concise denial reason; this message is returned to the caller (the Web App's Submission Handler, or any direct API client) as the HTTP error body. It is the only component that handles the raw admission webhook protocol — all other components operate on already-deserialized types.
+
+**Policy Verifier** validates the submitted `ResourceRequest` against the `ResourceCatalogue` entry named in `spec.resourceType`. Checks run in this order:
+
+. `spec.resourceType` exists in the Informer Cache — if not, deny immediately without running further checks.
+. `spec.approvalPolicy` structurally equals `ResourceCatalogue.spec.approvalPolicy` — the snapshot must match the current policy, field-by-field.
+. `spec.targetCRD` equals `ResourceCatalogue.spec.targetCRD`.
+. `spec.parameterSchema` equals `ResourceCatalogue.spec.parameterSchema`.
+. `spec.requester` equals `AdmissionReview.Request.UserInfo.Username` — the requester identity written into the object must match the authenticated identity making the API call.
+. For each stage, `spec.approvalStages[i].resolvedGroups` and `spec.approvalStages[i].resolvedUsers` entries for `idpGroup` and `explicitUsers` types match the values declared in the policy — no forged approver list.
+
+The Cluster Verifier handles the remaining two checks that require reading Rancher cluster objects.
+
+**Cluster Verifier** handles the checks that require reading Rancher cluster objects from the Informer Cache:
+
+. `spec.targetCluster` is a member of the set of clusters matching `ResourceCatalogue.spec.clusterSelector`.
+. For each stage that carries a `teamLabel` approver: reads the cluster label at `labelKey`, validates it against the `values` allowlist if one is present, applies `groupClaimTemplate` if configured, and asserts that the result equals the corresponding entry in `spec.approvalStages[i].resolvedGroups`.
+
+The `teamLabel` resolution algorithm in the Cluster Verifier is identical to the one in the Web App's Approver Resolver. Both components import the same shared Go package for this logic — see Key Design Decisions below.
+
+**Informer Cache** is a `SharedInformer` for `ResourceCatalogue` objects and Rancher cluster objects, started at webhook startup. It uses the webhook's own service account and runs entirely independently of the Web App's informer cache — the two processes share no in-memory state. Both resource types are low-frequency and admin-written, so the cache is always warm by the time a submission arrives.
+
+=== What the Admission Webhook does NOT do
+
+* It does not validate `spec.parameters` against the JSON schema — parameter validation is the Web App's responsibility at submission time, not an admission concern.
+* It does not check OIDC group membership — it validates the _identifiers_ stored in the approval data snapshot against the catalogue policy, not whether the named groups contain specific users.
+* It does not verify `status` fields — only `spec` is set at CREATE time; `status` starts empty.
+* It does not run on `ResourceRequest` UPDATE or DELETE — the admission scope is CREATE only, because `spec` is immutable after creation via CEL rules.
+
+=== Key Design Decisions
+
+**Shared teamLabel library prevents Verifier/Resolver divergence.** The teamLabel resolution algorithm must produce an identical group identifier whether called by the Cluster Verifier (webhook) or the Approver Resolver (Web App). If the two implementations diverge — for example because a bug fix is applied to one but not the other — the webhook may reject a legitimate submission (the computed identifier doesn't match what the Web App wrote) or pass a forged one (the identifier doesn't match, but in the attacker's favour). The shared package is not a convenience abstraction; it is a correctness constraint: a single implementation, tested once, imported by both.
+
+**Validation order is security-critical.** The Policy Verifier checks `spec.resourceType` first. If the resource type is unknown, all further checks are skipped and the request is denied without evaluating deeper fields. This prevents information leakage through differing error messages from deeper checks on an entirely unknown or guessed resource type. The `spec.requester` / `UserInfo` identity check always runs regardless of resource type — closing the bypass gap is the primary objective, and a missing resource type is not a reason to skip it.
+
+**Structural equality, not semantic equivalence.** The Policy Verifier compares `spec.approvalPolicy` and the `idpGroup`/`explicitUsers` entries in `spec.approvalStages` using field-by-field equality rather than checking semantic equivalence (e.g., whether two different group identifiers might resolve to the same members). The portal never expands groups to member lists, so semantic equivalence has no meaningful definition in this system. Structural equality is simpler, predictable, and immune to any race between group membership changes and the admission check.
 
 === Implementation Notes
 

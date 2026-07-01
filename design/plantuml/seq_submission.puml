@@ -36,6 +36,7 @@ participant "ResourceCatalogue\nCRD" as CAT    #E8F4FD
 participant "Rancher\nCluster API" as RCH    #E8F4FD
 participant "ProvisionedResource\nCRD" as PRCRD  #E8F4FD
 participant "ResourceRequest\nCRD" as RRCRD  #E8F4FD
+participant "Admission\nWebhook" as HOOK   #FDE8E8
 
 == Authentication ==
 
@@ -146,6 +147,31 @@ RES  --> SUB  : per-stage resolvedGroups and resolvedUsers
 == Write ResourceRequest ==
 
 SUB  -> RRCRD : create ResourceRequest\n(action, parameters, previousParameters,\npreviousGeneration, targetCluster, targetCRD,\napprovalPolicy snapshot, approvalStages,\nrequester identity)
+
+group Admission control (called synchronously by the API server before persist)
+    RRCRD -> HOOK  : AdmissionReview
+    HOOK  -> CAT   : get ResourceCatalogue entry\n(informer cache)
+    HOOK  -> RCH   : get cluster object\n(informer cache — teamLabel stages only)
+
+    note over HOOK
+        Policy Verifier: resourceType exists,
+        approvalPolicy snapshot equal, targetCRD
+        equal, requester == UserInfo.Username,
+        resolvedGroups/Users match policy.
+
+        Cluster Verifier: targetCluster in
+        clusterSelector; teamLabel re-derived
+        from cluster label matches snapshot.
+    end note
+
+    HOOK  --> RRCRD : AdmissionResponse (allowed / denied)
+
+    group Failure path — admission denied
+        RRCRD --> SUB  : 403 Forbidden
+        SUB   --> HTTP : error
+        HTTP  --> USR  : 403 Request rejected by admission control\n(policy snapshot mismatch or identity forgery)
+    end
+end
 
 group Failure path — API server error
     RRCRD --> SUB : error (conflict / server error)
