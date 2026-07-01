@@ -19,7 +19,7 @@
 
 .PHONY: up down export export-svg export-png export-text export-static \
         export-plantuml export-mermaid export-plantuml-svg plantuml-svg \
-        docs docs-html \
+        images-sync docs docs-html \
         open status logs clean podman-setup help
 
 SHELL := /bin/bash
@@ -241,10 +241,29 @@ plantuml-svg: ## Render exported .puml files → SVG  (uses plantuml binary, JAR
 	echo ""; \
 	echo "  SVGs written to $(PLANTUML_DEST)/"; \
 	echo ""
+	@$(MAKE) images-sync
 
 export-plantuml-svg: ## Export PlantUML sources then render them to SVG  (export-plantuml + plantuml-svg)
 	@$(MAKE) export-plantuml
 	@$(MAKE) plantuml-svg
+	@$(MAKE) images-sync
+
+images-sync: ## Copy all generated SVGs (C4 + PlantUML) into images/
+	@mkdir -p images
+	@copied=0; \
+	for dir in exported/svg exported/svg-plantuml; do \
+	  if [ -d "$$dir" ]; then \
+	    for f in "$$dir"/*.svg; do \
+	      [ -f "$$f" ] || continue; \
+	      case "$$f" in *-key.svg) continue;; esac; \
+	      cp "$$f" images/; \
+	      copied=$$((copied + 1)); \
+	    done; \
+	  fi; \
+	done; \
+	echo ""; \
+	echo "  $$copied SVG(s) copied to images/"; \
+	echo ""
 
 # ─── AsciiDoc → HTML ──────────────────────────────────────────────────────────
 #
