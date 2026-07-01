@@ -56,9 +56,14 @@ get_image() {
 }
 
 # ─── Run a temporary export container ────────────────────────────────────────
+#
+# raster_source: workspace.json (carries manual layout positions from the UI)
+# text_source:   workspace.dsl  (layout is irrelevant for text formats)
+#
 run_export() {
     local format="$1"
     local output_subdir="$2"
+    local workspace_file="${3:-workspace.dsl}"
     local image
     image="$(get_image)"
     local host_out="${OUTPUT_BASE}/${output_subdir}"
@@ -71,7 +76,7 @@ run_export() {
         "${image}" \
         export \
             -format "${format}" \
-            -workspace /usr/local/structurizr/workspace.dsl \
+            -workspace "/usr/local/structurizr/${workspace_file}" \
             -output /usr/local/exported/ \
         || warn "Export ${format} failed (may not be supported for this workspace)"
 }
@@ -81,7 +86,16 @@ export_raster() {
     local fmt="$1"
     log "=== Raster export (${fmt}) via Playwright ==="
     warn "First run downloads Chromium (~300MB) — may take a few minutes."
-    run_export "${fmt}" "${fmt}"
+    # Use workspace.json so manual layout positions from the UI are preserved.
+    # Fall back to workspace.dsl if the JSON does not exist yet.
+    local src="workspace.dsl"
+    if [[ -f "${WORKSPACE_DIR}/workspace.json" ]]; then
+        src="workspace.json"
+        log "Using workspace.json (layout-faithful)"
+    else
+        warn "workspace.json not found — layout will be auto-generated. Open the UI once to save positions."
+    fi
+    run_export "${fmt}" "${fmt}" "${src}"
 }
 
 # ─── Text formats ─────────────────────────────────────────────────────────────
