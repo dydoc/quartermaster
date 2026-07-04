@@ -336,6 +336,48 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 6. On confirmed absence, controller removes the finalizer from `ProvisionedResource` — the GC deletes it.
 7. Controller advances `ResourceRequest` phase to `provisioned` (the delete action completed successfully), sends notification.
 
+== Disaster Recovery and Restore
+
+=== State model and backup scope
+
+The portal has no external database. All portal state — `ResourceRequest` objects, `ProvisionedResource` objects, and `ResourceCatalogue` configuration — lives exclusively in etcd on the management cluster, via the Kubernetes CRD API. The three portal containers (Web Application, Approval Controller, Admission Webhook) are stateless and hold no durable data; they can be redeployed at any time without data loss. A standard etcd backup of the management cluster is the single required backup artifact for full portal state recovery.
+
+=== Recovery scenarios
+
+[cols="2,1,4", options="header"]
+|===
+| Scenario | Covered | Recovery path
+
+| Portal containers lost, etcd intact
+| Yes
+| Redeploy the three containers. The Approval Controller resumes from the existing `ResourceRequest` and `ProvisionedResource` objects in etcd. All informer caches rebuild on startup. No data loss.
+
+| Management cluster restored from etcd backup
+| Yes
+| Portal state is fully restored from the etcd snapshot. Containers are redeployed. The Approval Controller reconnects and resumes reconciliation. SSA re-applies on target clusters are idempotent.
+
+| Target cluster lost, management cluster intact
+| Yes — via Health Observer
+| The Health Observer detects `NotFound` on every `ProvisionedResource` in `provisioned` phase and re-applies each CRD target instance from `ProvisionedResource.spec.appliedParameters`. No manual intervention required, but the re-apply bypasses the approval workflow and produces no `ResourceRequest` audit trail entry (same trade-off as the out-of-band deletion re-apply described in the Approval Controller section).
+
+| Management cluster etcd lost, no backup
+| **Partial gap**
+| Portal state is lost. CRD target instances may still exist on target clusters. Without `ProvisionedResource` objects, the portal has no record of what was provisioned. See below.
+|===
+
+=== Brownfield re-import (known limitation)
+
+When etcd is lost without a backup, the management cluster can be rebuilt and the portal redeployed, but the `ProvisionedResource` objects that record what was provisioned on target clusters are gone. The CRD target instances on those clusters are intact, but the portal does not know about them.
+
+Without a re-import mechanism, two risks arise:
+
+* **Double provisioning**: a user re-submits a `create` request for a resource that already exists on the target cluster. The Approval Controller applies the new CRD target instance via SSA — which is idempotent if the parameters match exactly, but may overwrite a partially customised instance if they differ.
+* **Orphaned resources**: existing CRD target instances are never surfaced in the portal's status UI and are never tracked by the Health Observer.
+
+A re-import tool would need to: discover existing CRD target instances on each target cluster, match them against any surviving `ResourceRequest` history (if the etcd backup is partial), and create corresponding `ProvisionedResource` objects. This tool is **not currently implemented** and is flagged as a gap requiring manual operator intervention when etcd recovery from backup is not possible.
+
+**Operational recommendation**: treat etcd backup as mandatory, not optional. The management cluster etcd is the sole source of truth for all portal state, including the full audit trail of `ResourceRequest` objects. Without an etcd backup, full portal state recovery after a management cluster loss is not possible.
+
 == Key Design Decisions
 
 **Admission webhook closes the user-permission bypass gap.** End Users hold `create` permission on `ResourceRequest` so the Web App can write as the logged-in user for the Kubernetes audit trail. That same permission allows a user to bypass the Web App and craft a forged `ResourceRequest` with a trivial approval policy. The `ResourceRequest Admission Webhook` closes this gap at the API server boundary: it independently re-derives and verifies the approval policy snapshot, resolved approver data, `targetCRD`, `targetCluster`, and `spec.requester` on every CREATE before the object is persisted. `failurePolicy: Fail` ensures a webhook outage blocks all submissions rather than silently permitting unvalidated writes. The webhook is deployed separately from the Web App to eliminate the conflict of interest between the primary writer and its own validator.
@@ -371,3 +413,5 @@ An SMTP relay — either an in-cluster relay or an external SMTP gateway — use
 **Informer cache access control is application-layer, not RBAC-layer.** The Web App's `SharedInformer` uses the Web App's own service account for its single watch connection — it sees all `ResourceRequest` and `ProvisionedResource` objects. Per-user visibility is enforced in application code: the Status Handler filters objects by the requester identity stored in `spec.requester`; the Approver Handler filters by whether the logged-in user is eligible for any active approval stage, checked against `spec.approvalStages[].resolvedUsers` and `spec.approvalStages[].resolvedGroups` (OIDC group claim check). Write operations (creating `ResourceRequest`, recording decisions) remain authenticated as the logged-in user via Rancher and produce per-user Kubernetes audit log entries. This split is a deliberate design choice: using a per-user watch connection would require a separate informer per active session, which does not scale. The application-layer filtering is the appropriate boundary here because the CRD objects carry no sensitive data beyond portal state — the security boundary that matters is the `create`/`patch` RBAC on the target clusters, which is enforced by the dual identity plane.
 
 **Quota enforcement is soft at submission time.** Quota checks are performed by the Submission Handler reading the informer cache immediately before writing the `ResourceRequest`. Two near-simultaneous `create` submissions from the same user could both observe the same cache state, both pass the quota check, and both succeed — the cache has a finite resync window and no per-submission write lock exists. There is no controller-side quota re-enforcement. This is an accepted trade-off: quota is a governance guardrail, not a security control, and the race window is narrow in practice. Operators requiring hard quota enforcement should add a validating admission webhook on `ResourceRequest` that counts existing objects at write time via the API server.
+
+**etcd backup is the only required backup artifact.** Because the portal holds no state outside Kubernetes etcd, a standard management cluster etcd backup covers the complete portal state — `ResourceRequest` history, `ProvisionedResource` records, and `ResourceCatalogue` configuration. Portal containers are stateless and require no separate backup. Target cluster state (CRD target instances) can be restored by the Health Observer from `ProvisionedResource.spec.appliedParameters` if the management cluster is intact. The only unrecoverable scenario without an etcd backup is total management cluster etcd loss — in that case, CRD target instances on target clusters become orphaned and require manual re-import. Etcd backup must be treated as a mandatory operational requirement, not an optional enhancement.

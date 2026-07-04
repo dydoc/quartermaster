@@ -463,6 +463,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </ul>
 </li>
 <li><a href="#_key_design_decisions">4. Key Design Decisions</a></li>
+<li><a href="#_planned_scope_evolution">5. Planned scope evolution</a></li>
 </ul>
 </div>
 </div>
@@ -540,10 +541,21 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_planned_scope_evolution">5. Planned scope evolution</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><strong>Governance layer for CRD and operator installation.</strong> The current scope of the portal is the governance of CR <em>instance</em> creation — consuming pre-installed infrastructure APIs. A natural extension of the same model is governing the installation of CRDs and operators themselves: "we want to install the <code>DatabaseClaim</code> CRD and its controller on cluster X" becomes a portal request subject to the same approval workflow, quota model, and audit trail.</p>
+</div>
+<div class="paragraph">
+<p>This is architecturally coherent with the current design. A CRD + operator installation is just another <code>ResourceCatalogue</code> entry whose parameter schema captures chart values and whose CRD target instance is a Fleet <code>GitRepo</code>/Fleet Bundle or equivalent GitOps object. The Approval Controller would apply it through the same provisioning path it uses for any other CR — delegating execution to Fleet rather than to a bespoke operator.</p>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-06-14 06:48:16 UTC
+Last updated 2026-07-04 20:26:14 UTC
 </div>
 </div>
 </body>

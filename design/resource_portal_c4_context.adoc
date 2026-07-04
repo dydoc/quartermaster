@@ -52,3 +52,11 @@ On the cluster side, each resource type exposed by the portal is backed by a Cus
 **CRD-as-API surface.** The portal's interaction with clusters is entirely through CRDs — there are no bespoke APIs or imperative scripts. Adding a new resource type to the catalogue requires defining a new CRD and its controller, without touching the portal's core logic. This makes the platform extensible and keeps the provisioning logic close to the cluster where it belongs.
 
 **Approval without Git.** The approval workflow is native to the portal, not implemented as a pull request gate or an external ticketing integration. This keeps the feedback loop short and avoids coupling the provisioning path to a specific VCS workflow.
+
+
+
+== Planned scope evolution
+
+**Governance layer for CRD and operator installation.** The current scope of the portal is the governance of CR _instance_ creation — consuming pre-installed infrastructure APIs. A natural extension of the same model is governing the installation of CRDs and operators themselves: "we want to install the `DatabaseClaim` CRD and its controller on cluster X" becomes a portal request subject to the same approval workflow, quota model, and audit trail.
+
+This is architecturally coherent with the current design. A CRD + operator installation is just another `ResourceCatalogue` entry whose parameter schema captures chart values and whose CRD target instance is a Fleet `GitRepo`/Fleet Bundle or equivalent GitOps object. The Approval Controller would apply it through the same provisioning path it uses for any other CR — delegating execution to Fleet rather than to a bespoke operator.
